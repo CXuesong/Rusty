@@ -5,5 +5,15 @@
   "repository": "https://github.com/CXuesong/Rusty",
   "author": "CXuesong",
   "license": "Apache-2.0",
-  "private": true
+  "private": true,
+  "scripts": {
+    "build": "esbuild ./src/index.ts --bundle --outfile=./dist/rusty.js --platform=node --target=es2016",
+    "push": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-1",
+    "push:2": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-2",
+    "push:prod": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-prod"
+  },
+  "devDependencies": {
+    "@types/screeps": "^3.2.2",
+    "esbuild": "^0.12.1"
+  }
 }

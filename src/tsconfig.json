@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "module": "ES2020",
+        "moduleResolution": "Node",
+        "strict": true,
+        "noUnusedLocals": true,
+        "sourceMap": true,
+        "target": "ES2016",
+        "jsx": "react",
+        "lib": [
+            "DOM",
+            "ES2016",
+            "ES2017.Object"
+        ],
+        "esModuleInterop": true,
+        "downlevelIteration": true,
+        "importHelpers": true,
+        "removeComments": false,
+        "baseUrl": ".."
+    }
+}
