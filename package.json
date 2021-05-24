@@ -1,0 +1,9 @@
+{
+  "name": "Rusty",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/CXuesong/Rusty",
+  "author": "CXuesong",
+  "license": "Apache-2.0",
+  "private": true
+}
