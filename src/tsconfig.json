@@ -2,6 +2,7 @@
     "compilerOptions": {
         "module": "ES2020",
         "moduleResolution": "Node",
+        "allowUmdGlobalAccess": true,
         "strict": true,
         "noUnusedLocals": true,
         "sourceMap": true,
