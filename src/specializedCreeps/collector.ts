@@ -24,8 +24,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     public static spawn(spawn: StructureSpawn): string | SpecializedSpawnCreepErrorCode {
         const name = spawnCreep(spawn, {
-            [CARRY]: 5,
-            [MOVE]: 5,
+            [CARRY]: 2,
+            [MOVE]: 2,
+            [TOUGH]: 2,
         });
         if (typeof name === "string") {
             initializeCreepMemory<CollectorCreepState>(spawn, CollectorCreep.rustyType, {});

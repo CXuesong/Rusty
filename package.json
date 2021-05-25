@@ -7,7 +7,7 @@
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
-    "build": "esbuild ./src/index.ts --bundle --outfile=./dist/rusty.js --platform=node --target=es2016",
+    "build": "esbuild ./src/index.ts --bundle --outfile=./dist/rusty.js --platform=node --target=es2016 --tsconfig=./src/tsconfig.esbuild.json",
     "push": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-1",
     "push:2": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-2",
     "push:prod": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-prod"

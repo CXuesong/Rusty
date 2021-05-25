@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "paths": {
+            "wu": [
+                "node_modules/wu/wu.js"
+            ]
+        }
+    }
+}
