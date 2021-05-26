@@ -1,3 +1,4 @@
+import _ from "lodash/index";
 import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode, stateFromCreep } from "./base";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
@@ -46,7 +47,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             [CARRY]: 2,
             [MOVE]: 2,
             [WORK]: 1,
-            [TOUGH]: 1,
         });
         if (typeof name === "string") {
             initializeCreepMemory<CollectorCreepState>(spawn, name, CollectorCreep.rustyType, { mode: "collect" });

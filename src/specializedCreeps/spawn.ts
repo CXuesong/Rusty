@@ -1,5 +1,5 @@
+import _ from "lodash/index";
 import { getRustyMemory } from "src/memory";
-import wu from "wu";
 import { buildCreepMemory, SpecializedSpawnCreepErrorCode } from "./base";
 import { randomApprenticeName, randomLeaderName, randomWarriorName } from "./nameGenerator";
 
@@ -13,8 +13,11 @@ export function initializeCreepMemory<TState extends Record<string, any> = {}>(s
 export function spawnCreep(spawn: StructureSpawn,
     body: BodyPartConstant[] | Partial<Record<BodyPartConstant, number>>,
     options?: SpawnOptions): string | SpecializedSpawnCreepErrorCode {
-    if (!Array.isArray(body)) body = wu(Object.entries(body)).concatMap(([part, count]) => wu.repeat(part as BodyPartConstant, count)).toArray();
-    if (spawn.spawning) throw new Error(`Spawn ${spawn.name} is currently spawning ${spawn.spawning.name} (ETA ${spawn.spawning.remainingTime} ticks).`);
+    if (!Array.isArray(body)) body = _(body).flatMap((count, part) => _(count).times(() => part as BodyPartConstant)).value();
+    if (spawn.spawning) {
+        console.log(`spawnCreep: Spawn ${spawn.name} is currently spawning ${spawn.spawning.name} (ETA ${spawn.spawning.remainingTime} ticks).`);
+        return ERR_BUSY;
+    }
     let name: string;
     const result = ((): Exclude<ScreepsReturnCode, ERR_NAME_EXISTS> => {
         let r: ScreepsReturnCode;

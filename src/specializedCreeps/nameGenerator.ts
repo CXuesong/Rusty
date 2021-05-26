@@ -1,3 +1,5 @@
+import _ from "lodash/index";
+
 const prefixes = [
     "Acorn",
     "Adder",

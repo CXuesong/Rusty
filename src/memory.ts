@@ -16,6 +16,6 @@ export function getRustyMemory(): RustyMemoryPart {
     }
     const rusty = Memory.rusty as RustyMemoryPart;
     if (typeof rusty.clock !== "number") rusty.clock = 0;
-    if (!Array.isArray(rusty.spawningCreeps)) rusty.spawningCreeps = {};
+    if (!Array.isArray(rusty.spawningCreeps)) rusty.spawningCreeps = [];
     return rusty;
 }

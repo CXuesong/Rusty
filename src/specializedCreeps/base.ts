@@ -14,6 +14,16 @@ export function buildCreepMemory<TState extends Record<string, any> = {}>(rustyT
     };
 }
 
+export interface SpecializedCreepType {
+    readonly rustyType: string;
+    readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;
+    new(creep: Creep) : SpecializedCreepBase<any>;
+}
+
+export function isSpecializedCreepOf(creep: Creep, type: SpecializedCreepType): boolean {
+    return creep.memory?.rustyType === type.rustyType;
+}
+
 export abstract class SpecializedCreepBase<TState extends Record<string, any> = {}> {
     public static readonly rustyType: string;
     public static readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;

@@ -12,22 +12,17 @@
   resolved "https://registry.yarnpkg.com/@types/screeps/-/screeps-3.2.2.tgz#d7a4cccac98e063f37dd16c546be229bfc849536"
   integrity sha512-oI3zKXVL1HDkZ/x0xUhjD9CfAXmQPe/1kNkyKg5Wtd092/N5E5fYbNSH+Hgd5v6LEizYCLo+4drozp82j4Z9zw==
 
-"@types/wu@^2.1.42":
-  version "2.1.42"
-  resolved "https://registry.yarnpkg.com/@types/wu/-/wu-2.1.42.tgz#27ae70e38067316f24abcf81b950230449fe8bad"
-  integrity sha512-+GTq3oqVD+DY7iANRfazy8YhLlKwxIG2hTCF72W+yuCbnjZ6PSkxju/3emOZ4+lzMJ7ximpY3XnCQSBjIGbYgw==
-
 esbuild@^0.12.1:
   version "0.12.1"
   resolved "https://registry.yarnpkg.com/esbuild/-/esbuild-0.12.1.tgz#f652d5b3b9432dbb42fc2c034ddd62360296e03d"
   integrity sha512-WfQ00MKm/Y4ysz1u9PCUAsV66k5lbrcEvS6aG9jhBIavpB94FBdaWeBkaZXxCZB4w+oqh+j4ozJFWnnFprOXbg==
 
+lodash@^4.17.21:
+  version "4.17.21"
+  resolved "https://registry.yarnpkg.com/lodash/-/lodash-4.17.21.tgz#679591c564c3bffaae8454cf0b3df370c3d6911c"
+  integrity sha512-v2kDEe57lecTulaDIuNTPy3Ry4gLGJ6Z1O3vE1krgXZNrsQ+LFTGHVxVjcXPs17LhbZVGedAJv8XZ1tvj5FvSg==
+
 tslib@^2.2.0:
   version "2.2.0"
   resolved "https://registry.yarnpkg.com/tslib/-/tslib-2.2.0.tgz#fb2c475977e35e241311ede2693cee1ec6698f5c"
   integrity sha512-gS9GVHRU+RGn5KQM2rllAlR3dU6m7AcpJKdtH8gFvQiC4Otgk98XnmMU+nZenHt/+VhnBPWwgrJsyrdcw6i23w==
-
-wu@^2.1.0:
-  version "2.1.0"
-  resolved "https://registry.yarnpkg.com/wu/-/wu-2.1.0.tgz#7e72e3fba23e0ff669ddd537e1c857d3d4b1614f"
-  integrity sha1-fnLj+6I+D/Zp3dU34chX09SxYU8=
