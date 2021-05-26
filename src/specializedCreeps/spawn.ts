@@ -3,10 +3,11 @@ import wu from "wu";
 import { buildCreepMemory, SpecializedSpawnCreepErrorCode } from "./base";
 import { randomApprenticeName, randomLeaderName, randomWarriorName } from "./nameGenerator";
 
-export function initializeCreepMemory<TState extends Record<string, any> = {}>(spawn: StructureSpawn, rustyType: string, state: TState): void {
-    const { spawning } = spawn;
-    if (!spawning) throw new Error("No spawnning object.");
-    getRustyMemory().spawningCreeps[spawn.name] = { creep: spawning.name, memory: buildCreepMemory(rustyType, state) };
+export function initializeCreepMemory<TState extends Record<string, any> = {}>(spawn: StructureSpawn, creepName: string, rustyType: string, state: TState): void {
+    // Note that the creep just started spawning is not visible at current frame.
+    // const { spawning } = spawn;
+    // if (!spawning) throw new Error("No spawnning object.");
+    getRustyMemory().spawningCreeps[spawn.name] = { creep: creepName, memory: buildCreepMemory(rustyType, state) };
 }
 
 export function spawnCreep(spawn: StructureSpawn,

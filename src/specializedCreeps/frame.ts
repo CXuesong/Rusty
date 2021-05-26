@@ -35,6 +35,7 @@ export function onNextFrame() {
             ...creep.memory,
             ...m.memory
         };
+        console.log(`Creep memory ${creep} ${JSON.stringify(creep.memory)}`);
         delete spawningCreeps[k];
     }
 

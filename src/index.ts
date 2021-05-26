@@ -1,3 +1,5 @@
+/// <reference path="./typings.d.ts" />
+
 import { getRustyMemory } from "./memory";
 import * as RustyRoom from "./room";
 import * as SpecializedCreeps from "./specializedCreeps";

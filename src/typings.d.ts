@@ -1,14 +1,19 @@
+export { }
 
-interface Memory {
-    rusty: unknown;
+declare global {
+    interface Memory {
+        rusty: unknown;
+    }
+
+    interface CreepMemory {
+        rusty: unknown;
+        rustyType: string;
+    }
 }
 
-interface CreepMemory {
-    rusty: unknown;
-    rustyType: string;
-}
-
-declare module "wu/wu.js" {
-    import { WuIterable } from "wu";
-    export default WuIterable
+declare module "lodash/index" {
+    interface Collection<T> {
+        abcdef: number;
+        [Symbol.iterator](): IterableIterator<T>;
+    }
 }
