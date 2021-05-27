@@ -22,15 +22,18 @@ export function onNextFrame(): void {
             if (controller?.my) {
                 const progressRemaining = controller.progressTotal - controller.progress;
                 if (progressRemaining < 100)
-                    expectedCollectors.push(2);
+                    expectedCollectors.push(5);
                 else if (progressRemaining < 1000)
-                    expectedCollectors.push(10);
+                    expectedCollectors.push(30);
+                else if (progressRemaining < 10000)
+                    expectedCollectors.push(50);
                 else
-                    expectedCollectors.push(20);
+                    expectedCollectors.push(80);
             }
             const collectors = _(creeps).filter(c => isSpecializedCreepOf(c, CollectorCreep)).size();
-            room.visual.text(`Expected collectors: ${collectors}.`, 0, 0);
-            if (collectors < Math.max(...expectedCollectors)) {
+            const expc = Math.max(...expectedCollectors)
+            room.visual.text(`Collectors: ${collectors}/${expectedCollectors}.`, 0, 0);
+            if (collectors < expc) {
                 // Spawn collectors if necessary.
                 trySpawn(spawns, s => CollectorCreep.spawn(s));
             }

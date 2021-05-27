@@ -1,5 +1,5 @@
 import _ from "lodash/index";
-import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode, stateFromCreep } from "./base";
+import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 interface CollectorCreepState {
@@ -7,22 +7,6 @@ interface CollectorCreepState {
     spawnId?: Id<StructureSpawn>;
     dullTicks?: number;
     mode: "collect" | "distribute" | "distribute-spawn" | "distribute-controller";
-}
-
-let occupiedSpawnCacheRoom: Room | undefined;
-let occupiedSpawnCache: Map<Id<StructureSpawn>, Set<Creep>> | undefined;
-
-function getOccupiedSpawns(room: Room): Map<Id<StructureSpawn>, Set<Creep>> {
-    if (room === occupiedSpawnCacheRoom) return occupiedSpawnCache || new Map();
-    const result = new Map(_(room
-        .find(FIND_MY_CREEPS, { filter: c => c.memory.rustyType === CollectorCreep.rustyType }))
-        .map(c => [stateFromCreep<CollectorCreepState>(c).spawnId, c] as const)
-        .filter((x): x is [Id<StructureSpawn>, Creep] => !!x[0])
-        .groupBy(([s, _]) => s)
-        .map((p, s) => [s as Id<StructureSpawn>, new Set(_(p).map(([_, c]) => c))] as const));
-    occupiedSpawnCacheRoom = room;
-    occupiedSpawnCache = result;
-    return result;
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -66,13 +50,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         state.dullTicks = undefined;
         creep.say(`Switch mode: ${mode}.`);
     }
-    // private idleThenSwitchMode(switchToMode: CollectorCreepState["mode"], idleTicks: number): void {
-    //     const { state } = this;
-    //     state.dullTicks = (state.dullTicks || 0) + 1;
-    //     if (state.dullTicks >= idleTicks) {
-    //         this.switchMode(switchToMode);
-    //     }
-    // }
     private tickDull(): boolean {
         const { state } = this;
         state.dullTicks = (state.dullTicks || _.random(5, 15)) - 1;
@@ -87,28 +64,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         state.sourceId = sourceId;
     }
     private assignSpawn(spawnId?: Id<StructureSpawn>): void {
-        const { creep, state } = this;
-        if ((state.spawnId || undefined) === spawnId) return;
-        if (occupiedSpawnCache && creep.room === occupiedSpawnCacheRoom) {
-            if (state.spawnId) {
-                // Release current
-                occupiedSpawnCache.get(state.spawnId)?.delete(creep);
-            }
-            if (spawnId) {
-                // Register next
-                const sl = occupiedSpawnCache.get(spawnId);
-                if (sl)
-                    sl.add(creep);
-                else
-                    occupiedSpawnCache.set(spawnId, new Set([creep]));
-            }
-        }
+        const { state } = this;
         state.spawnId = spawnId;
     }
     private findNextSource(): boolean {
         const { creep, state } = this;
         if (state.mode !== "collect") throw new Error("Invalid state.");
-        let source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
+        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
             costCallback: (roomName, cost) => {
                 const room = Game.rooms[roomName];
                 if (!room) {
@@ -121,8 +83,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     if (s.energy <= 2) c = 255;
                     else if (s.energy <= 20) c = 50;
                     else if (s.energy <= 50) c = 30;
-                    else if (s.energy <= 100) c = 10;
-                    else if (s.energy <= 1000) c = 5;
+                    else if (s.energy <= 100) c = 20;
                     else c = undefined;
                     if (c != null) cost.set(s.pos.x, s.pos.y, c);
                 }
@@ -140,16 +101,23 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             && state.mode !== "distribute-controller"
             && state.mode !== "distribute-spawn"
         ) throw new Error("Invalid state.");
-        const spawns = creep.room.find(FIND_MY_SPAWNS);
-        const occupied = getOccupiedSpawns(this.creep.room);
-        // TODO choose nearer sources with more energy.
-        const nextSpawn = _(spawns)
-            .filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-            .filter(s => (occupied.get(s.id)?.size || 0) <= 2)
-            .maxBy(s => s.store.getFreeCapacity(RESOURCE_ENERGY) / (occupied.get(s.id)?.size || 0.1));
-        if (nextSpawn) {
+        const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
+            costCallback: (roomName, cost) => {
+                const room = Game.rooms[roomName];
+                if (!room) {
+                    console.log(`Collector: Unable to check room ${roomName}.`);
+                    return;
+                }
+                const spawns = room.find(FIND_MY_SPAWNS);
+                for (const s of spawns) {
+                    if (!s.store.getFreeCapacity(RESOURCE_ENERGY))
+                        cost.set(s.pos.x, s.pos.y, 255);
+                }
+            }
+        });
+        if (spawn) {
             this.switchMode("distribute-spawn");
-            this.assignSpawn(nextSpawn.id);
+            this.assignSpawn(spawn.id);
             return true;
         }
         return false;
@@ -178,7 +146,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private nextFrameCollect(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
-        let source = state.sourceId && Game.getObjectById(state.sourceId);
+        const source = state.sourceId && Game.getObjectById(state.sourceId);
         const harvestResult = source && creep.harvest(source);
         if (!source || harvestResult === ERR_NOT_IN_RANGE) {
             if (source) creep.moveTo(source);
@@ -192,7 +160,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.assignSource();
                 return;
             }
-            source = Game.getObjectById(state.sourceId!)!;
         } else if (harvestResult === ERR_NOT_ENOUGH_RESOURCES) {
             if (source.ticksToRegeneration > 10)
                 this.findNextSource();
@@ -208,10 +175,12 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private nextFrameDistributeSpawn(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
-        let spawn = state.spawnId && Game.getObjectById(state.spawnId);
-        if (!state.spawnId || !spawn || !spawn.store.getFreeCapacity(RESOURCE_ENERGY)) {
-            // Spawn is full
+        const spawn = state.spawnId && Game.getObjectById(state.spawnId);
+        const transferResult = spawn && creep.transfer(spawn, RESOURCE_ENERGY);
+        if (!spawn || transferResult === ERR_NOT_IN_RANGE) {
+            if (spawn) creep.moveTo(spawn);
             if (this.tickDull()) return;
+            // Recheck nearest spawn.
             if (!this.findNextSpawn()) {
                 // We have more energy.
                 if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 3) {
@@ -221,15 +190,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 }
                 return;
             }
-            spawn = Game.getObjectById(state.spawnId!)!;
-        }
-        switch (creep.transfer(spawn, RESOURCE_ENERGY)) {
-            case ERR_NOT_IN_RANGE:
-                creep.moveTo(spawn);
-                return;
-            case ERR_FULL:
-                this.findNextSpawn();
-                return;
+        } else if (transferResult === ERR_FULL) {
+            if (this.tickDull()) return;
+            this.findNextSpawn();
         }
     }
     private nextFrameDistributeController(): void {
