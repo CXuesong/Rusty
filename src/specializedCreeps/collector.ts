@@ -9,23 +9,8 @@ interface CollectorCreepState {
     mode: "collect" | "distribute" | "distribute-spawn" | "distribute-controller";
 }
 
-let occupiedSourceCacheRoom: Room | undefined;
-let occupiedSourceCache: Map<Id<Source>, Set<Creep>> | undefined;
 let occupiedSpawnCacheRoom: Room | undefined;
 let occupiedSpawnCache: Map<Id<StructureSpawn>, Set<Creep>> | undefined;
-
-function getOccupiedSources(room: Room): Map<Id<Source>, Set<Creep>> {
-    if (room === occupiedSourceCacheRoom) return occupiedSourceCache || new Map();
-    const result = new Map(_(room
-        .find(FIND_MY_CREEPS, { filter: c => c.memory.rustyType === CollectorCreep.rustyType }))
-        .map(c => [stateFromCreep<CollectorCreepState>(c).sourceId, c] as const)
-        .filter((x): x is [Id<Source>, Creep] => !!x[0])
-        .groupBy(([s, _]) => s)
-        .map((p, s) => [s as Id<Source>, new Set(_(p).map(([_, c]) => c))] as const));
-    occupiedSourceCacheRoom = room;
-    occupiedSourceCache = result;
-    return result;
-}
 
 function getOccupiedSpawns(room: Room): Map<Id<StructureSpawn>, Set<Creep>> {
     if (room === occupiedSpawnCacheRoom) return occupiedSpawnCache || new Map();
@@ -90,7 +75,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     // }
     private tickDull(): boolean {
         const { state } = this;
-        state.dullTicks = (state.dullTicks || _.random(5, 17)) - 1;
+        state.dullTicks = (state.dullTicks || _.random(5, 15)) - 1;
         if (state.dullTicks <= 0) {
             state.dullTicks = undefined;
             return false;
@@ -98,22 +83,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         return true;
     }
     private assignSource(sourceId?: Id<Source>): void {
-        const { creep, state } = this;
-        if ((state.sourceId || undefined) === sourceId) return;
-        if (occupiedSourceCache && creep.room === occupiedSourceCacheRoom) {
-            if (state.sourceId) {
-                // Release current
-                occupiedSourceCache.get(state.sourceId)?.delete(creep);
-            }
-            if (sourceId) {
-                // Register next
-                const sl = occupiedSourceCache.get(sourceId);
-                if (sl)
-                    sl.add(creep);
-                else
-                    occupiedSourceCache.set(sourceId, new Set([creep]));
-            }
-        }
+        const { state } = this;
         state.sourceId = sourceId;
     }
     private assignSpawn(spawnId?: Id<StructureSpawn>): void {
@@ -138,14 +108,28 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private findNextSource(): boolean {
         const { creep, state } = this;
         if (state.mode !== "collect") throw new Error("Invalid state.");
-        const sources = creep.room.find(FIND_SOURCES_ACTIVE);
-        const occupied = getOccupiedSources(this.creep.room);
-        // TODO choose nearer sources with more energy.
-        const nextSource = _(sources)
-            .filter(s => (occupied.get(s.id)?.size || 0) <= 2)
-            .maxBy(s => s.energy / (occupied.get(s.id)?.size || 0.1));
-        if (nextSource) {
-            this.assignSource(nextSource.id);
+        let source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
+            costCallback: (roomName, cost) => {
+                const room = Game.rooms[roomName];
+                if (!room) {
+                    console.log(`Collector: Unable to check room ${roomName}.`);
+                    return;
+                }
+                const sources = room.find(FIND_SOURCES_ACTIVE);
+                for (const s of sources) {
+                    let c: number | undefined;
+                    if (s.energy <= 2) c = 255;
+                    else if (s.energy <= 20) c = 50;
+                    else if (s.energy <= 50) c = 30;
+                    else if (s.energy <= 100) c = 10;
+                    else if (s.energy <= 1000) c = 5;
+                    else c = undefined;
+                    if (c != null) cost.set(s.pos.x, s.pos.y, c);
+                }
+            }
+        });
+        if (source) {
+            this.assignSource(source.id);
             return true;
         }
         return false;
@@ -195,9 +179,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
         let source = state.sourceId && Game.getObjectById(state.sourceId);
-        if (!state.sourceId || !source || !source.energy) {
-            // Source exhausted
+        const harvestResult = source && creep.harvest(source);
+        if (!source || harvestResult === ERR_NOT_IN_RANGE) {
+            if (source) creep.moveTo(source);
             if (this.tickDull()) return;
+            // Recheck nearest source.
             if (!this.findNextSource()) {
                 if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
                     this.switchMode("distribute");
@@ -207,14 +193,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 return;
             }
             source = Game.getObjectById(state.sourceId!)!;
-        }
-        switch (creep.harvest(source)) {
-            case ERR_NOT_IN_RANGE:
-                creep.moveTo(source);
-                return;
-            case ERR_NOT_ENOUGH_RESOURCES:
+        } else if (harvestResult === ERR_NOT_ENOUGH_RESOURCES) {
+            if (source.ticksToRegeneration > 10)
                 this.findNextSource();
-                return;
         }
     }
     private nextFrameDistribute(): void {
