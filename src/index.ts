@@ -1,6 +1,5 @@
 /// <reference path="./typings.d.ts" />
 
-import { getRustyMemory } from "./memory";
 import * as RustyRoom from "./room";
 import * as SpecializedCreeps from "./specializedCreeps";
 
@@ -8,9 +7,7 @@ export function loop() {
     console.log("Rusty primary loop: Started.")
     const startTime = performance.now();
     try {
-        const rusty = getRustyMemory();
-        rusty.clock++;
-        console.log("Clock", rusty.clock);
+        console.log("Time", Game.time);
         RustyRoom.onNextFrame();
         SpecializedCreeps.onNextFrame();
     } catch (err) {

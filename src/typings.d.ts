@@ -9,11 +9,14 @@ declare global {
         rusty: unknown;
         rustyType: string;
     }
+
+    interface RoomMemory {
+        rusty: unknown;
+    }
 }
 
 declare module "lodash/index" {
     interface Collection<T> {
-        abcdef: number;
         [Symbol.iterator](): IterableIterator<T>;
     }
 }

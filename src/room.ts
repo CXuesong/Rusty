@@ -1,13 +1,19 @@
 import _ from "lodash";
-import { getRustyMemory } from "./memory";
 import { trySpawn } from "./spawn";
 import { isSpecializedCreepOf } from "./specializedCreeps";
 import { CollectorCreep } from "./specializedCreeps/collector";
 
+interface RustyRoomMemory {
+    nextSpawnTime?: number;
+}
+
 export function onNextFrame(): void {
-    const { clock } = getRustyMemory();
-    if (clock % 5 === 0) {
-        for (const room of _(Game.rooms).values()) {
+    for (const room of _(Game.rooms).values()) {
+        if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
+        const rusty = room.memory.rusty as RustyRoomMemory;
+        const { nextSpawnTime } = rusty;
+        if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
+            rusty.nextSpawnTime = Game.time + _.random(5, 15);
             const spawns = room.find(FIND_MY_SPAWNS);
             const sources = room.find(FIND_SOURCES_ACTIVE);
             const creeps = room.find(FIND_MY_CREEPS);
