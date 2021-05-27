@@ -49,7 +49,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             [WORK]: 1,
         });
         if (typeof name === "string") {
-            initializeCreepMemory<CollectorCreepState>(spawn, name, CollectorCreep.rustyType, { mode: "collect" });
+            initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "collect" });
         }
         return name;
     }
@@ -75,7 +75,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private switchMode(mode: CollectorCreepState["mode"]): void {
         const { creep, state } = this;
-        state.mode = "distribute";
+        state.mode = mode;
         this.assignSource();
         this.assignSpawn();
         state.dullTicks = undefined;
@@ -114,6 +114,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     occupiedSourceCache.set(sourceId, new Set([creep]));
             }
         }
+        state.sourceId = sourceId;
     }
     private assignSpawn(spawnId?: Id<StructureSpawn>): void {
         const { creep, state } = this;
@@ -132,6 +133,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     occupiedSpawnCache.set(spawnId, new Set([creep]));
             }
         }
+        state.spawnId = spawnId;
     }
     private findNextSource(): boolean {
         const { creep, state } = this;
@@ -158,6 +160,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const occupied = getOccupiedSpawns(this.creep.room);
         // TODO choose nearer sources with more energy.
         const nextSpawn = _(spawns)
+            .filter(s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
             .filter(s => (occupied.get(s.id)?.size || 0) <= 2)
             .maxBy(s => s.store.getFreeCapacity(RESOURCE_ENERGY) / (occupied.get(s.id)?.size || 0.1));
         if (nextSpawn) {

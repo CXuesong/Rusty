@@ -11,9 +11,20 @@ export function onNextFrame(): void {
             const spawns = room.find(FIND_MY_SPAWNS);
             const sources = room.find(FIND_SOURCES_ACTIVE);
             const creeps = room.find(FIND_MY_CREEPS);
-            const expectedCollectors = Math.max(1, Math.round(spawns.length + sources.length * 0.3));
+            const expectedCollectors = [2, Math.round(spawns.length + sources.length)];
+            const { controller } = room;
+            if (controller?.my) {
+                const progressRemaining = controller.progressTotal - controller.progress;
+                if (progressRemaining < 100)
+                    expectedCollectors.push(2);
+                else if (progressRemaining < 1000)
+                    expectedCollectors.push(10);
+                else
+                    expectedCollectors.push(20);
+            }
             const collectors = _(creeps).filter(c => isSpecializedCreepOf(c, CollectorCreep)).size();
-            if (collectors < expectedCollectors) {
+            room.visual.text(`Expected collectors: ${collectors}.`, 0, 0);
+            if (collectors < Math.max(...expectedCollectors)) {
                 // Spawn collectors if necessary.
                 trySpawn(spawns, s => CollectorCreep.spawn(s));
             }

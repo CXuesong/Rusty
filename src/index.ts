@@ -6,6 +6,7 @@ import * as SpecializedCreeps from "./specializedCreeps";
 
 export function loop() {
     console.log("Rusty primary loop: Started.")
+    const startTime = performance.now();
     try {
         const rusty = getRustyMemory();
         rusty.clock++;
@@ -15,6 +16,7 @@ export function loop() {
     } catch (err) {
         console.log("Rusty primary loop: Error.", err.stack || String(err));
     } finally {
-        console.log("Rusty primary loop: Finished.")
+        const duration = Math.round(performance.now() - startTime);
+        console.log(`Rusty primary loop: Finished in ${duration}ms.`);
     }
 }

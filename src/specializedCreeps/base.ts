@@ -38,4 +38,9 @@ export abstract class SpecializedCreepBase<TState extends Record<string, any> = 
         return this.creep.memory.rusty as TState;
     }
     public abstract nextFrame(): void;
+    /** Called before creep terminates. */
+    public dispose(): void {
+        console.log(`Dispose memory: ${this.creep}.`)
+        delete Memory.creeps[this.creep.name];
+    }
 }

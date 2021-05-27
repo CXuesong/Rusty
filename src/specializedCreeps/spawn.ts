@@ -1,13 +1,16 @@
 import _ from "lodash/index";
-import { getRustyMemory } from "src/memory";
 import { buildCreepMemory, SpecializedSpawnCreepErrorCode } from "./base";
 import { randomApprenticeName, randomLeaderName, randomWarriorName } from "./nameGenerator";
 
-export function initializeCreepMemory<TState extends Record<string, any> = {}>(spawn: StructureSpawn, creepName: string, rustyType: string, state: TState): void {
+export function initializeCreepMemory<TState extends Record<string, any> = {}>(creepName: string, rustyType: string, state: TState): void {
     // Note that the creep just started spawning is not visible at current frame.
     // const { spawning } = spawn;
     // if (!spawning) throw new Error("No spawnning object.");
-    getRustyMemory().spawningCreeps[spawn.name] = { creep: creepName, memory: buildCreepMemory(rustyType, state) };
+    if (Memory.creeps[creepName]) {
+        // Dead creep did not clean up.
+        console.log(`initializeCreepMemory: Overwriting creep memory: ${creepName}`);
+    }
+    Memory.creeps[creepName] = buildCreepMemory(rustyType, state);
 }
 
 export function spawnCreep(spawn: StructureSpawn,
