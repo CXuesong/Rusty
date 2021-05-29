@@ -35,13 +35,17 @@ interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect 
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
     mode: "distribute";
-    destId: Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite>;
+    destId: Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite> | Id<StructureExtension>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
 interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateDistribute {
     spawnId: Id<StructureSpawn>;
+}
+
+interface CollectorCreepStateDistributeExtension extends CollectorCreepStateDistribute {
+    extensionId: Id<StructureExtension>;
 }
 
 interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
@@ -58,10 +62,11 @@ export type CollectorCreepState
     | CollectorCreepStateCollectTombstone
     | CollectorCreepStateCollectResource
     | CollectorCreepStateDistributeSpawn
+    | CollectorCreepStateDistributeExtension
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
 
-type CollectorDestId = Id<Tombstone> | Id<Resource> | Id<Source> | Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite>;
+type CollectorDestId = Id<Tombstone> | Id<Resource> | Id<Source> | Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite> | Id<StructureExtension>;
 
 let occupiedDests: Map<CollectorDestId, Set<Id<Creep>>> | undefined;
 const emptySet: ReadonlySet<any> = {
@@ -209,6 +214,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private transitDistribute(): boolean {
         const { creep, state } = this;
+        this.state
         const { room } = creep;
         const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
             const c = getTargetingCollectors(id);
@@ -227,7 +233,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             return costs;
         };
         if (state.mode === "distribute") {
-            const reEvaluatePath = (target: StructureController | StructureSpawn | ConstructionSite) => {
+            const reEvaluatePath = (target: StructureController | StructureSpawn | ConstructionSite | StructureExtension) => {
                 this.pathCache = {
                     targetId: target.id,
                     targetPath: creep.pos.findPathTo(target.pos, {
@@ -252,6 +258,12 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 const s = Game.getObjectById(state.constructionSiteId);
                 if (s && s.progress < s.progressTotal) {
                     reEvaluatePath(s);
+                    return true;
+                }
+            } else if ("extensionId" in state) {
+                const ext = Game.getObjectById(state.extensionId);
+                if (ext && ext.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                    reEvaluatePath(ext);
                     return true;
                 }
             }
@@ -416,11 +428,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if ("spawnId" in state) {
             const spawn = dest = Game.getObjectById(state.spawnId);
             result = spawn ? creep.transfer(spawn, RESOURCE_ENERGY) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
+            this.logger.trace(`nextFrameCollect: creep.transfer -> ${result}.`);
         } else if ("constructionSiteId" in state) {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameCollect: creep.build -> ${result}.`);
+        } else if ("extensionId" in state) {
+            const extension = dest = Game.getObjectById(state.extensionId);
+            result = extension ? creep.transfer(extension, RESOURCE_ENERGY) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.transfer -> ${result}.`);
         } else {
             const controller = dest = Game.getObjectById(state.controllerId);
             result = controller ? creep.upgradeController(controller) : undefined;
