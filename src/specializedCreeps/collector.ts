@@ -44,15 +44,16 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private switchMode(mode: CollectorCreepState["mode"]): void {
         const { creep, state } = this;
+        creep.say(mode);
+        // console.log(`${creep}: Switch mode: ${state.mode} -> ${mode}.`);
         state.mode = mode;
         this.assignSource();
         this.assignSpawn();
         state.dullTicks = undefined;
-        creep.say(`Switch mode: ${mode}.`);
     }
     private tickDull(): boolean {
         const { state } = this;
-        state.dullTicks = (state.dullTicks || _.random(5, 15)) - 1;
+        state.dullTicks = (state.dullTicks || _.random(2, 10)) - 1;
         if (state.dullTicks <= 0) {
             state.dullTicks = undefined;
             return false;
@@ -87,6 +88,20 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     else c = undefined;
                     if (c != null) cost.set(s.pos.x, s.pos.y, c);
                 }
+                // Evade hostile creeps.
+                const hostile = room.find(FIND_HOSTILE_CREEPS);
+                for (const h of hostile) {
+                    const { x, y } = h.pos;
+                    if (h.getActiveBodyparts(RANGED_ATTACK)) {
+                        for (let xd = -3; xd <= 3; xd++)
+                            for (let yd = -3; yd <= 3; yd++)
+                                cost.set(x + xd, y + yd, 255);
+                    } else if (h.getActiveBodyparts(ATTACK)) {
+                        for (let xd = -1; xd <= 1; xd++)
+                            for (let yd = -1; yd <= 1; yd++)
+                                cost.set(x + xd, y + yd, 255);
+                    }
+                }
             }
         });
         if (source) {
@@ -116,7 +131,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
         });
         if (spawn) {
-            this.switchMode("distribute-spawn");
+            if (state.mode !== "distribute-spawn") this.switchMode("distribute-spawn");
             this.assignSpawn(spawn.id);
             return true;
         }
@@ -167,8 +182,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private nextFrameDistribute(): void {
         if (!this.checkEnergyConstraint()) return;
-        // Check whether there are spawns to transfer energy.
-        if (this.findNextSpawn()) return;
+        const { creep } = this;
+        if (creep.room.controller?.my) {
+            const { controller } = creep.room;
+            if (controller.ticksToDowngrade <= 500) {
+                // Resetting downgrade timer is priority.
+                this.switchMode("distribute-controller");
+                return;
+            }
+        }
+        // Check whether there are spawns to transfer energy. Possibility: 1/2.
+        if (_.random(2) > 0 && this.findNextSpawn()) return;
         // Otherwise, go upgrade controller.
         this.switchMode("distribute-controller");
     }
@@ -183,16 +207,20 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             // Recheck nearest spawn.
             if (!this.findNextSpawn()) {
                 // We have more energy.
-                if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 3) {
-                    this.switchMode("distribute-controller");
-                } else {
+                if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 5)
+                    this.switchMode("distribute");
+                else
                     this.switchMode("collect");
-                }
                 return;
             }
         } else if (transferResult === ERR_FULL) {
-            if (this.tickDull()) return;
-            this.findNextSpawn();
+            if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 4) {
+                if (this.tickDull()) return;
+                this.switchMode("distribute");
+            }
+            else {
+                this.switchMode("collect");
+            }
         }
     }
     private nextFrameDistributeController(): void {
@@ -200,9 +228,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep } = this;
         let { controller } = creep.room;
         if (!controller || !controller.my) {
-            if (this.tickDull()) return;
             // We have more energy.
             if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 4) {
+                if (this.tickDull()) return;
                 this.switchMode("distribute-spawn");
             } else {
                 this.switchMode("collect");
