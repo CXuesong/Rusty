@@ -1,12 +1,14 @@
 import _ from "lodash";
 import { Logger } from "src/utility/logger";
 import { CollectorCreep } from "./collector";
+import { DefenderCreep } from "./defender";
 import { getSpecializedCreep, knownCreepTypes } from "./registry";
 
 const logger = new Logger("Rusty.SpecializedCreeps");
 
 knownCreepTypes.push(
-    CollectorCreep
+    CollectorCreep,
+    DefenderCreep,
 );
 
 function houseKeeping() {

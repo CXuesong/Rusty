@@ -2,6 +2,7 @@ import _ from "lodash";
 import { trySpawn } from "./spawn";
 import { isSpecializedCreepOf } from "./specializedCreeps";
 import { CollectorCreep } from "./specializedCreeps/collector";
+import { DefenderCreep } from "./specializedCreeps/defender";
 import { Logger } from "./utility/logger";
 
 interface RustyRoomMemory {
@@ -21,6 +22,17 @@ export function onRoomNextFrame(room: Room): void {
         if (spawns.length) {
             const sources = room.find(FIND_SOURCES_ACTIVE);
             const creeps = room.find(FIND_MY_CREEPS);
+            const defenders = _(creeps).filter(c => isSpecializedCreepOf(c, DefenderCreep)).size();
+            if (defenders < 1) {
+                trySpawn(spawns, s => DefenderCreep.spawn(s));
+                return;
+            } else {
+                const hostileCreeps = room.find(FIND_HOSTILE_CREEPS).length;
+                if (hostileCreeps > 0 && defenders < hostileCreeps + 1) {
+                    trySpawn(spawns, s => DefenderCreep.spawn(s));
+                    return;
+                }
+            }
             const expectedCollectors = [2, (spawns.length + sources.length) * 8];
             const { controller } = room;
             if (controller?.my) {

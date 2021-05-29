@@ -1,5 +1,5 @@
 import _ from "lodash/index";
-import { evadeHostileCreeps } from "src/utility/costMatrix";
+import { evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
 import { Logger } from "src/utility/logger";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
@@ -20,11 +20,15 @@ interface CollectorCreepStateCollect extends CollectorCreepStateBase {
 }
 
 interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
-    sourceId: Id<Source>;
+    readonly sourceId: Id<Source>;
 }
 
 interface CollectorCreepStateCollectTombstone extends CollectorCreepStateCollect {
-    tombstoneId: Id<Tombstone>;
+    readonly tombstoneId: Id<Tombstone>;
+}
+
+interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect {
+    readonly resourceId: Id<Resource>;
 }
 
 interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateBase {
@@ -41,29 +45,31 @@ type CollectorCreepState
     = CollectorCreepStateIdle
     | CollectorCreepStateCollectSource
     | CollectorCreepStateCollectTombstone
+    | CollectorCreepStateCollectResource
     | CollectorCreepStateDistributeSpawn
     | CollectorCreepStateDistributeController;
 
-let occupiedTombstones: Map<Id<Tombstone>, Id<Creep>> | undefined;
+let occupiedDests: Map<Id<Tombstone> | Id<Resource>, Id<Creep>> | undefined;
 
-function getTombstoneCollector(id: Id<Tombstone>): Id<Creep> | undefined {
-    if (!occupiedTombstones) {
-        occupiedTombstones = new Map();
+function getExclusiveCollector(id: Id<Tombstone> | Id<Resource>): Id<Creep> | undefined {
+    if (!occupiedDests) {
+        occupiedDests = new Map();
         for (const c of enumSpecializedCreeps(CollectorCreep)) {
-            if (c.state.mode === "collect" && "tombstoneId" in c.state) {
-                occupiedTombstones.set(c.state.tombstoneId, c.id);
+            if (c.state.mode === "collect") {
+                if ("tombstoneId" in c.state) occupiedDests.set(c.state.tombstoneId, c.id);
+                else if ("resourceId" in c.state) occupiedDests.set(c.state.resourceId, c.id);
             }
         }
     }
-    return occupiedTombstones.get(id);
+    return occupiedDests.get(id);
 }
 
-function declareTombstoneCollector(id: Id<Tombstone>, collector?: Id<Creep>): void {
-    if (!occupiedTombstones) return;
+function declareExclusiveDestCollector(id: Id<Tombstone> | Id<Resource>, collector?: Id<Creep>): void {
+    if (!occupiedDests) return;
     if (collector)
-        occupiedTombstones.set(id, collector);
+        occupiedDests.set(id, collector);
     else
-        occupiedTombstones.delete(id);
+        occupiedDests.delete(id);
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -100,8 +106,16 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     protected onStateRootChanging(newState: CollectorCreepState): CollectorCreepState {
         const { creep, state } = this;
         if (newState.mode !== state.mode) {
-            creep.say(newState.mode.split("-").map(s => s.substr(4)).join("-"));
+            creep.say(newState.mode.split("-").map(s => s.substr(0, 4)).join("-"));
             this.logger.info(`Switch mode: ${state.mode} -> ${newState.mode}.`);
+        }
+        if (state.mode === "collect") {
+            if ("tombstoneId" in state) declareExclusiveDestCollector(state.tombstoneId);
+            if ("resourceId" in state) declareExclusiveDestCollector(state.resourceId);
+        }
+        if (newState.mode === "collect") {
+            if ("tombstoneId" in state) declareExclusiveDestCollector(state.tombstoneId, this.id);
+            if ("resourceId" in state) declareExclusiveDestCollector(state.resourceId, this.id);
         }
         return newState;
     }
@@ -115,67 +129,44 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         return true;
     }
     private transitCollect(): boolean {
-        const { creep, state } = this;
-        const currentDest = state.mode === "collect" ? state.destId : undefined;
-        // Collect tombstone (in current room) first.
-        const tombstone = creep.pos.findClosestByPath(FIND_TOMBSTONES, {
-            filter: t => t.store.energy >= 10 && t.ticksToDecay >= 3 && (getTombstoneCollector(t.id) ?? this === this),
-            maxRooms: 1,
-            costCallback: (roomName, cost) => {
+        const { creep } = this;
+        const { room } = creep;
+        const resources = room.find(FIND_DROPPED_RESOURCES, {
+            filter: r => r.resourceType === RESOURCE_ENERGY
+                && (getExclusiveCollector(r.id) || this) === this
+                && r.amount * (1 - r.pos.getRangeTo(creep) * 1.6 / ENERGY_DECAY) > 20
+        }) as Resource<RESOURCE_ENERGY>[];
+        const tombstones = room.find(FIND_TOMBSTONES, {
+            filter: t => t.store.energy >= 20 && t.ticksToDecay >= 3
+                && (getExclusiveCollector(t.id) || this) === this
+        });
+        const sources = room.find(FIND_SOURCES_ACTIVE, {
+            filter: t => t.energy >= 50 || t.energyCapacity >= 100 && t.ticksToRegeneration <= 20
+        });
+        const goals = [...resources, ...tombstones, ...sources];
+        const nearest = findNearestPath(creep.pos, goals, {
+            maxRooms: 1, roomCallback: roomName => {
                 const room = Game.rooms[roomName];
                 if (!room) {
                     this.logger.warning(`Unable to check room ${roomName}.`);
-                    return;
+                    return false;
                 }
-                const tombstones = room.find(FIND_TOMBSTONES);
-                for (const ts of tombstones) {
-                    let c: number | undefined;
-                    if (ts.id === currentDest) c = -100;
-                    else if (ts.store.energy <= 20) c = 50;
-                    else if (ts.store.energy <= 50) c = 10;
-                    else c = undefined;
-                    if (c != null) cost.set(ts.pos.x, ts.pos.y, c);
-                }
-                // Evade hostile creeps.
-                evadeHostileCreeps(room, cost);
+                const costs = new PathFinder.CostMatrix();
+                evadeHostileCreeps(room, costs);
+                return costs;
             }
         });
-        if (tombstone) {
-            this.logger.info(`Collect ${tombstone}.`);
-            this.state = { mode: "collect", tombstoneId: tombstone.id, destId: tombstone.id };
-            declareTombstoneCollector(tombstone.id, this.id);
-            return true;
-        }
-        // Then collect energy source.
-        const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
-            maxRooms: 4,
-            costCallback: (roomName, cost) => {
-                const room = Game.rooms[roomName];
-                if (!room) {
-                    this.logger.warning(`Unable to check room ${roomName}.`);
-                    return;
-                }
-                const sources = room.find(FIND_SOURCES_ACTIVE);
-                for (const s of sources) {
-                    let c: number | undefined;
-                    if (s.id === currentDest) c = -100;
-                    else if (s.energy <= 2) c = 255;
-                    else if (s.energy <= 20) c = 50;
-                    else if (s.energy <= 50) c = 30;
-                    else if (s.energy <= 100) c = 20;
-                    else c = undefined;
-                    if (c != null) cost.set(s.pos.x, s.pos.y, c);
-                }
-                // Evade hostile creeps.
-                evadeHostileCreeps(room, cost);
-            }
-        });
-        if (source) {
-            this.logger.info(`Collect ${source}.`);
-            this.state = { mode: "collect", sourceId: source.id, destId: source.id };
-            return true;
-        }
-        return false;
+        if (!nearest) return false;
+        this.logger.info(`Collect ${nearest.goal}.`);
+        if (nearest.goal instanceof Resource)
+            this.state = { mode: "collect", resourceId: nearest.goal.id, destId: nearest.goal.id };
+        else if (nearest.goal instanceof Tombstone)
+            this.state = { mode: "collect", tombstoneId: nearest.goal.id, destId: nearest.goal.id };
+        else if (nearest.goal instanceof Source)
+            this.state = { mode: "collect", sourceId: nearest.goal.id, destId: nearest.goal.id };
+        else
+            throw new Error("Unexpected code path.");
+        return true;
     }
     private transitDistribute(): boolean {
         const { creep, state } = this;
@@ -262,7 +253,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if (state.mode !== "collect") throw new Error("Invalid state.");
         let result;
         let dest;
-        if ("tombstoneId" in state) {
+        if ("resourceId" in state) {
+            const resource = dest = Game.getObjectById(state.resourceId);
+            result = resource ? creep.pickup(resource) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
+        } else if ("tombstoneId" in state) {
             const tombstone = dest = Game.getObjectById(state.tombstoneId);
             result = tombstone ? creep.withdraw(tombstone, RESOURCE_ENERGY) : undefined;
             this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
