@@ -19,6 +19,8 @@ function getNewSpecializedCreepInst(creep: Creep | Id<Creep>): SpecializedCreepB
 
 export function getSpecializedCreep(creep: Creep | Id<Creep>): SpecializedCreepBase | undefined {
     const id = creep instanceof Creep ? creep.id : creep;
+    // Spawnning screep does not own ID.
+    if (!id) return undefined;
     let c = creepCache.get(id);
     if (!c) {
         c = getNewSpecializedCreepInst(creep);

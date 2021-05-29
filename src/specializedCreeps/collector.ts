@@ -238,7 +238,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 }
                 return true;
             default:
-                throw new Error("Invalid state.");
+                throw new Error("Invalid state:" + state.mode);
         }
     }
     // private tryTransferEnergy(): boolean {
@@ -293,25 +293,24 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         state.isWalking = result === ERR_NOT_IN_RANGE;
         if (result == null || result === ERR_NOT_IN_RANGE) {
-            let moveResult = undefined;
-            if (dest) {
-                if (
-                    // Need to prepare next path.
-                    Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
-                    // Transient cache lost.
-                    || this.pathCache?.targetId !== dest.id) {
-                } {
-                    if (!this.transitCollect()) {
-                        this.transitIdle();
-                        return;
-                    }
+            if (
+                // Dest is gone.
+                !dest
+                // Need to prepare next path.
+                || Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
+                // Transient cache lost.
+                || this.pathCache?.targetId !== dest.id) {
+            } {
+                if (!this.transitCollect()) {
+                    this.transitIdle();
+                    return;
                 }
-                if (!creep.fatigue) {
-                    if (!this.pathCache) throw new Error("Assertion failure.");
-                    moveResult = creep.moveByPath(this.pathCache.targetPath);
-                    if (moveResult !== OK) {
-                        this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
-                    }
+            }
+            if (!creep.fatigue) {
+                if (!this.pathCache) throw new Error("Assertion failure.");
+                const moveResult = creep.moveByPath(this.pathCache.targetPath);
+                if (moveResult !== OK) {
+                    this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
                 }
             }
             return;

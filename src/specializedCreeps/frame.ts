@@ -28,10 +28,10 @@ let nextHouseKeepingTime = 0;
 export function onNextFrame() {
     // Drive the creeps
     for (const creep of _(Game.creeps).values()) {
-        const sc = getSpecializedCreep(creep);
-        if (!sc) continue;
-        const { ticksToLive } = creep;
         try {
+            const sc = getSpecializedCreep(creep);
+            if (!sc) continue;
+            const { ticksToLive } = creep;
             if (ticksToLive != null && ticksToLive <= 1) {
                 sc.dispose();
             } else {
