@@ -1,7 +1,9 @@
 import _ from "lodash";
+import { Logger } from "src/utility/logger";
 import { SpecializedCreepBase } from "./base";
 import { CollectorCreep } from "./collector";
 
+const logger = new Logger("Rusty.SpecializedCreeps");
 const creepCache = new Map<Id<Creep>, SpecializedCreepBase>();
 
 function getNewSpecializedCreepInst(creep: Creep): SpecializedCreepBase | undefined {
@@ -36,7 +38,7 @@ export function onNextFrame() {
                 sc.nextFrame();
             }
         } catch (err) {
-            console.log(`SpecializedCreeps: ${sc}(${creep}): ${err.stack || err}`);
+            logger.error(`onNextFrame failed in ${creep}.`, err);
         }
     }
 }

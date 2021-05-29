@@ -1,4 +1,5 @@
 import _ from "lodash/index";
+import { Logger } from "src/utility/logger";
 import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { getSpecializedCreep } from "./frame";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
@@ -13,6 +14,7 @@ interface CollectorCreepState {
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
+    private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
     public static spawn(spawn: StructureSpawn): string | SpecializedSpawnCreepErrorCode {
         const name = spawnCreep(spawn, {
             [CARRY]: 2,
@@ -47,7 +49,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private switchMode(mode: CollectorCreepState["mode"]): void {
         const { creep, state } = this;
         creep.say(mode);
-        console.log(`${creep}: Switch mode: ${state.mode} -> ${mode}.`);
+        this.logger.info(`Switch mode: ${state.mode} -> ${mode}.`);
         state.mode = mode;
         this.assignSource();
         this.assignSpawn();
@@ -77,7 +79,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             costCallback: (roomName, cost) => {
                 const room = Game.rooms[roomName];
                 if (!room) {
-                    console.log(`Collector: Unable to check room ${roomName}.`);
+                    this.logger.warning(`Unable to check room ${roomName}.`);
                     return;
                 }
                 const sources = room.find(FIND_SOURCES_ACTIVE);
@@ -122,7 +124,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             costCallback: (roomName, cost) => {
                 const room = Game.rooms[roomName];
                 if (!room) {
-                    console.log(`Collector: Unable to check room ${roomName}.`);
+                    this.logger.warning(`Unable to check room ${roomName}.`);
                     return;
                 }
                 const spawns = room.find(FIND_MY_SPAWNS);
@@ -176,8 +178,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 return undefined;
             });
         if (target) {
-            creep.transfer(target.creep, RESOURCE_ENERGY);
-            return true;
+            const result = creep.transfer(target.creep, RESOURCE_ENERGY);
+            this.logger.info(`tryTransferEnergy: creep.transfer(${target.creep}) -> ${result}.`);
+            return result === OK;
         }
         return false;
     }
@@ -186,7 +189,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep, state } = this;
         const source = state.sourceId && Game.getObjectById(state.sourceId);
         const harvestResult = source && creep.harvest(source);
-        console.log(`Creep [${creep}]: ${harvestResult}`)
+        this.logger.trace(`nextFrameCollect: creep.harvest -> ${harvestResult}.`);
         state.isWalking = harvestResult === ERR_NOT_IN_RANGE;
         if (!source || harvestResult === ERR_NOT_IN_RANGE) {
             if (source) creep.moveTo(source);
@@ -229,7 +232,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const spawn = state.spawnId && Game.getObjectById(state.spawnId);
         const transferResult = spawn && creep.transfer(spawn, RESOURCE_ENERGY);
         state.isWalking = transferResult === ERR_NOT_IN_RANGE;
-        console.log(`creep ${creep}: ${transferResult}`)
+        this.logger.trace(`nextFrameDistributeSpawn: creep.transfer(${spawn}) -> ${transferResult}.`);
         if (!spawn || transferResult === ERR_NOT_IN_RANGE) {
             if (spawn) creep.moveTo(spawn);
             if (this.tickDull()) return;
@@ -266,7 +269,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
             return;
         }
-        switch (creep.upgradeController(controller)) {
+        const result = creep.upgradeController(controller);
+        this.logger.trace(`nextFrameDistributeController: creep.upgradeController(${controller}) -> ${result}.`);
+        switch (result) {
             case ERR_NOT_IN_RANGE:
                 state.isWalking = true;
                 creep.moveTo(controller);

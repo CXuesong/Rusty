@@ -1,6 +1,9 @@
 import _ from "lodash/index";
+import { Logger } from "src/utility/logger";
 import { buildCreepMemory, SpecializedSpawnCreepErrorCode } from "./base";
 import { randomApprenticeName, randomLeaderName, randomWarriorName } from "./nameGenerator";
+
+const logger = new Logger("Rusty.SpecializedCreeps.Spawn");
 
 export function initializeCreepMemory<TState extends Record<string, any> = {}>(creepName: string, rustyType: string, state: TState): void {
     // Note that the creep just started spawning is not visible at current frame.
@@ -8,7 +11,7 @@ export function initializeCreepMemory<TState extends Record<string, any> = {}>(c
     // if (!spawning) throw new Error("No spawnning object.");
     if (Memory.creeps[creepName]) {
         // Dead creep did not clean up.
-        console.log(`initializeCreepMemory: Overwriting creep memory: ${creepName}`);
+        logger.info(`initializeCreepMemory: Overwriting creep memory: ${creepName}`);
     }
     Memory.creeps[creepName] = buildCreepMemory(rustyType, state);
 }
@@ -18,7 +21,7 @@ export function spawnCreep(spawn: StructureSpawn,
     options?: SpawnOptions): string | SpecializedSpawnCreepErrorCode {
     if (!Array.isArray(body)) body = _(body).flatMap((count, part) => _(count).times(() => part as BodyPartConstant)).value();
     if (spawn.spawning) {
-        console.log(`spawnCreep: Spawn ${spawn.name} is currently spawning ${spawn.spawning.name} (ETA ${spawn.spawning.remainingTime} ticks).`);
+        logger.warning(`spawnCreep: Spawn ${spawn.name} is currently spawning ${spawn.spawning.name} (ETA ${spawn.spawning.remainingTime} ticks).`);
         return ERR_BUSY;
     }
     let name: string;

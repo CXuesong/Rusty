@@ -1,4 +1,8 @@
+import { Logger } from "src/utility/logger";
+
 export type SpecializedSpawnCreepErrorCode = Exclude<ScreepsReturnCode, OK | ERR_NAME_EXISTS>;
+
+const logger = new Logger("Rusty.SpecializedCreeps.SpecializedCreepBase");
 
 export function stateFromCreep<TState extends Record<string, any> = {}>(creep: Creep) {
     if (!creep) throw new TypeError("creep is falsy.");
@@ -17,7 +21,7 @@ export function buildCreepMemory<TState extends Record<string, any> = {}>(rustyT
 export interface SpecializedCreepType {
     readonly rustyType: string;
     readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;
-    new(creep: Creep) : SpecializedCreepBase<any>;
+    new(creep: Creep): SpecializedCreepBase<any>;
 }
 
 export function isSpecializedCreepOf(creep: Creep, type: SpecializedCreepType): boolean {
@@ -40,7 +44,7 @@ export abstract class SpecializedCreepBase<TState extends Record<string, any> = 
     public abstract nextFrame(): void;
     /** Called before creep terminates. */
     public dispose(): void {
-        console.log(`Dispose memory: ${this.creep}.`)
+        logger.info(`Dispose memory: ${this.creep}.`)
         delete Memory.creeps[this.creep.name];
     }
 }
