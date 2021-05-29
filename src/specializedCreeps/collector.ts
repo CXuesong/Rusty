@@ -1,15 +1,69 @@
 import _ from "lodash/index";
+import { evadeHostileCreeps } from "src/utility/costMatrix";
 import { Logger } from "src/utility/logger";
-import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
-import { getSpecializedCreep } from "./frame";
+import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
-interface CollectorCreepState {
-    sourceId?: Id<Source>;
-    spawnId?: Id<StructureSpawn>;
+interface CollectorCreepStateBase {
+    mode: string;
     dullTicks?: number;
-    mode: "collect" | "distribute" | "distribute-spawn" | "distribute-controller";
     isWalking?: boolean;
+}
+
+interface CollectorCreepStateIdle extends CollectorCreepStateBase {
+    mode: "idle";
+}
+
+interface CollectorCreepStateCollect extends CollectorCreepStateBase {
+    mode: "collect";
+    destId: string;
+}
+
+interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
+    sourceId: Id<Source>;
+}
+
+interface CollectorCreepStateCollectTombstone extends CollectorCreepStateCollect {
+    tombstoneId: Id<Tombstone>;
+}
+
+interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateBase {
+    mode: "distribute-spawn";
+    spawnId: Id<StructureSpawn>;
+}
+
+interface CollectorCreepStateDistributeController extends CollectorCreepStateBase {
+    mode: "distribute-controller";
+    controllerId: Id<StructureController>;
+}
+
+type CollectorCreepState
+    = CollectorCreepStateIdle
+    | CollectorCreepStateCollectSource
+    | CollectorCreepStateCollectTombstone
+    | CollectorCreepStateDistributeSpawn
+    | CollectorCreepStateDistributeController;
+
+let occupiedTombstones: Map<Id<Tombstone>, Id<Creep>> | undefined;
+
+function getTombstoneCollector(id: Id<Tombstone>): Id<Creep> | undefined {
+    if (!occupiedTombstones) {
+        occupiedTombstones = new Map();
+        for (const c of enumSpecializedCreeps(CollectorCreep)) {
+            if (c.state.mode === "collect" && "tombstoneId" in c.state) {
+                occupiedTombstones.set(c.state.tombstoneId, c.id);
+            }
+        }
+    }
+    return occupiedTombstones.get(id);
+}
+
+function declareTombstoneCollector(id: Id<Tombstone>, collector?: Id<Creep>): void {
+    if (!occupiedTombstones) return;
+    if (collector)
+        occupiedTombstones.set(id, collector);
+    else
+        occupiedTombstones.delete(id);
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -22,7 +76,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             [WORK]: 1,
         });
         if (typeof name === "string") {
-            initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "collect" });
+            initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "idle" });
         }
         return name;
     }
@@ -32,9 +86,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             case "collect":
                 this.nextFrameCollect();
                 break;
-            case "distribute":
-                this.nextFrameDistribute();
-                break;
             case "distribute-spawn":
                 this.nextFrameDistributeSpawn();
                 break;
@@ -42,18 +93,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.nextFrameDistributeController();
                 break;
             default:
-                this.switchMode("collect");
+                this.transitCollect();
                 break;
         }
     }
-    private switchMode(mode: CollectorCreepState["mode"]): void {
+    protected onStateRootChanging(newState: CollectorCreepState): CollectorCreepState {
         const { creep, state } = this;
-        creep.say(mode);
-        this.logger.info(`Switch mode: ${state.mode} -> ${mode}.`);
-        state.mode = mode;
-        this.assignSource();
-        this.assignSpawn();
-        state.dullTicks = undefined;
+        if (newState.mode !== state.mode) {
+            creep.say(newState.mode.split("-").map(s => s.substr(4)).join("-"));
+            this.logger.info(`Switch mode: ${state.mode} -> ${newState.mode}.`);
+        }
+        return newState;
     }
     private tickDull(): boolean {
         const { state } = this;
@@ -64,18 +114,41 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         return true;
     }
-    private assignSource(sourceId?: Id<Source>): void {
-        const { state } = this;
-        state.sourceId = sourceId;
-    }
-    private assignSpawn(spawnId?: Id<StructureSpawn>): void {
-        const { state } = this;
-        state.spawnId = spawnId;
-    }
-    private findNextSource(): boolean {
+    private transitCollect(): boolean {
         const { creep, state } = this;
-        if (state.mode !== "collect") throw new Error("Invalid state.");
+        const currentDest = state.mode === "collect" ? state.destId : undefined;
+        // Collect tombstone (in current room) first.
+        const tombstone = creep.pos.findClosestByPath(FIND_TOMBSTONES, {
+            filter: t => t.store.energy >= 10 && t.ticksToDecay >= 3 && (getTombstoneCollector(t.id) ?? this === this),
+            maxRooms: 1,
+            costCallback: (roomName, cost) => {
+                const room = Game.rooms[roomName];
+                if (!room) {
+                    this.logger.warning(`Unable to check room ${roomName}.`);
+                    return;
+                }
+                const tombstones = room.find(FIND_TOMBSTONES);
+                for (const ts of tombstones) {
+                    let c: number | undefined;
+                    if (ts.id === currentDest) c = -100;
+                    else if (ts.store.energy <= 20) c = 50;
+                    else if (ts.store.energy <= 50) c = 10;
+                    else c = undefined;
+                    if (c != null) cost.set(ts.pos.x, ts.pos.y, c);
+                }
+                // Evade hostile creeps.
+                evadeHostileCreeps(room, cost);
+            }
+        });
+        if (tombstone) {
+            this.logger.info(`Collect ${tombstone}.`);
+            this.state = { mode: "collect", tombstoneId: tombstone.id, destId: tombstone.id };
+            declareTombstoneCollector(tombstone.id, this.id);
+            return true;
+        }
+        // Then collect energy source.
         const source = creep.pos.findClosestByPath(FIND_SOURCES_ACTIVE, {
+            maxRooms: 4,
             costCallback: (roomName, cost) => {
                 const room = Game.rooms[roomName];
                 if (!room) {
@@ -85,7 +158,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 const sources = room.find(FIND_SOURCES_ACTIVE);
                 for (const s of sources) {
                     let c: number | undefined;
-                    if (s.energy <= 2) c = 255;
+                    if (s.id === currentDest) c = -100;
+                    else if (s.energy <= 2) c = 255;
                     else if (s.energy <= 20) c = 50;
                     else if (s.energy <= 50) c = 30;
                     else if (s.energy <= 100) c = 20;
@@ -93,50 +167,50 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     if (c != null) cost.set(s.pos.x, s.pos.y, c);
                 }
                 // Evade hostile creeps.
-                const hostile = room.find(FIND_HOSTILE_CREEPS);
-                for (const h of hostile) {
-                    const { x, y } = h.pos;
-                    if (h.getActiveBodyparts(RANGED_ATTACK)) {
-                        for (let xd = -3; xd <= 3; xd++)
-                            for (let yd = -3; yd <= 3; yd++)
-                                cost.set(x + xd, y + yd, 255);
-                    } else if (h.getActiveBodyparts(ATTACK)) {
-                        for (let xd = -1; xd <= 1; xd++)
-                            for (let yd = -1; yd <= 1; yd++)
-                                cost.set(x + xd, y + yd, 255);
-                    }
-                }
+                evadeHostileCreeps(room, cost);
             }
         });
         if (source) {
-            this.assignSource(source.id);
+            this.logger.info(`Collect ${source}.`);
+            this.state = { mode: "collect", sourceId: source.id, destId: source.id };
             return true;
         }
         return false;
     }
-    private findNextSpawn(): boolean {
+    private transitDistribute(): boolean {
         const { creep, state } = this;
-        if (state.mode !== "distribute"
-            && state.mode !== "distribute-controller"
-            && state.mode !== "distribute-spawn"
-        ) throw new Error("Invalid state.");
-        const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
-            costCallback: (roomName, cost) => {
-                const room = Game.rooms[roomName];
-                if (!room) {
-                    this.logger.warning(`Unable to check room ${roomName}.`);
-                    return;
-                }
-                const spawns = room.find(FIND_MY_SPAWNS);
-                for (const s of spawns) {
-                    if (!s.store.getFreeCapacity(RESOURCE_ENERGY))
-                        cost.set(s.pos.x, s.pos.y, 255);
-                }
+        const { controller } = creep.room;
+        if (state.mode === "distribute-controller") {
+            if (controller?.my) return true;
+        } else if (state.mode === "distribute-spawn") {
+            const s = Game.getObjectById(state.spawnId);
+            if (s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) return true;
+        }
+        let controllerPriority = 0.3;
+        if (controller?.my) {
+            if (controller.ticksToDowngrade <= 500) {
+                // Resetting downgrade timer is priority.
+                controllerPriority = 1;
             }
-        });
-        if (spawn) {
-            if (state.mode !== "distribute-spawn") this.switchMode("distribute-spawn");
-            this.assignSpawn(spawn.id);
+        }
+        if (controllerPriority < 1 && _.random(true) > controllerPriority) {
+            const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
+                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
+                // costCallback: (roomName, cost) => {
+                //     const room = Game.rooms[roomName];
+                //     if (!room) {
+                //         this.logger.warning(`transitDistribute: Unable to check room ${roomName}.`);
+                //         return;
+                //     }
+                // }
+            });
+            if (spawn) {
+                this.state = { mode: "distribute-spawn", spawnId: spawn.id };
+                return true;
+            }
+        }
+        if (controller?.my) {
+            this.state = { mode: "distribute-controller", controllerId: controller.id }
             return true;
         }
         return false;
@@ -146,16 +220,14 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         switch (state.mode) {
             case "collect":
                 if (!creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
-                    if (!this.tryTransferEnergy() && !this.tickDull())
-                        this.switchMode("distribute");
+                    this.transitDistribute();
                     return false;
                 }
                 return true;
-            case "distribute":
             case "distribute-controller":
             case "distribute-spawn":
-                if (creep.store.getUsedCapacity(RESOURCE_ENERGY) === 0) {
-                    this.switchMode("collect");
+                if (!creep.store.energy) {
+                    this.transitCollect();
                     return false;
                 }
                 return true;
@@ -163,72 +235,67 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 throw new Error("Invalid state.");
         }
     }
-    private tryTransferEnergy(): boolean {
-        const { creep } = this;
-        const myEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-        if (!myEnergy) return false;
-        const targets = creep.pos.findInRange(FIND_MY_CREEPS, 1, { filter: c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
-        const target = _(targets)
-            .map(c => getSpecializedCreep(c))
-            .filter(c => !!c)
-            .minBy(c => {
-                // Only transfer energy to walking creeps.
-                if (c instanceof CollectorCreep && c.state.isWalking)
-                    return c.creep.store.getFreeCapacity(RESOURCE_ENERGY);
-                return undefined;
-            });
-        if (target) {
-            const result = creep.transfer(target.creep, RESOURCE_ENERGY);
-            this.logger.info(`tryTransferEnergy: creep.transfer(${target.creep}) -> ${result}.`);
-            return result === OK;
-        }
-        return false;
-    }
+    // private tryTransferEnergy(): boolean {
+    //     const { creep } = this;
+    //     const myEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+    //     if (!myEnergy) return false;
+    //     const targets = creep.pos.findInRange(FIND_MY_CREEPS, 1, { filter: c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
+    //     const target = _(targets)
+    //         .map(c => getSpecializedCreep(c))
+    //         .filter(c => !!c)
+    //         .minBy(c => {
+    //             // Only transfer energy to walking creeps.
+    //             if (c instanceof CollectorCreep && c.state.isWalking)
+    //                 return c.creep.store.getFreeCapacity(RESOURCE_ENERGY);
+    //             return undefined;
+    //         });
+    //     if (target) {
+    //         const result = creep.transfer(target.creep, RESOURCE_ENERGY);
+    //         this.logger.info(`tryTransferEnergy: creep.transfer(${target.creep}) -> ${result}.`);
+    //         return result === OK;
+    //     }
+    //     return false;
+    // }
     private nextFrameCollect(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
-        const source = state.sourceId && Game.getObjectById(state.sourceId);
-        const harvestResult = source && creep.harvest(source);
-        this.logger.trace(`nextFrameCollect: creep.harvest -> ${harvestResult}.`);
-        state.isWalking = harvestResult === ERR_NOT_IN_RANGE;
-        if (!source || harvestResult === ERR_NOT_IN_RANGE) {
-            if (source) creep.moveTo(source);
+        if (state.mode !== "collect") throw new Error("Invalid state.");
+        let result;
+        let dest;
+        if ("tombstoneId" in state) {
+            const tombstone = dest = Game.getObjectById(state.tombstoneId);
+            result = tombstone ? creep.withdraw(tombstone, RESOURCE_ENERGY) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
+        } else {
+            const source = dest = Game.getObjectById(state.sourceId);
+            result = source ? creep.harvest(source) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.harvest -> ${result}.`);
+        }
+        state.isWalking = result === ERR_NOT_IN_RANGE;
+        if (result == null || result === ERR_NOT_IN_RANGE) {
+            if (dest) creep.moveTo(dest);
             if (this.tickDull()) return;
             // Recheck nearest source.
-            if (!this.findNextSource()) {
-                if (creep.store.getUsedCapacity(RESOURCE_ENERGY) > 0) {
-                    this.switchMode("distribute");
+            if (!this.transitCollect()) {
+                if (creep.store.energy > 0) {
+                    this.transitDistribute();
                     return;
                 }
-                this.assignSource();
+                creep.say("Idle");
+                this.logger.warning("nextFrameCollect: Nothing to do.");
                 return;
             }
-        } else if (harvestResult === ERR_NOT_ENOUGH_RESOURCES) {
-            if (source.ticksToRegeneration > 10)
-                this.findNextSource();
-            else
+        } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
+            if (dest instanceof Source && dest.ticksToRegeneration > 10)
                 creep.say("Wait Regn");
+            else
+                this.transitCollect();
         }
-    }
-    private nextFrameDistribute(): void {
-        if (!this.checkEnergyConstraint()) return;
-        const { creep } = this;
-        if (creep.room.controller?.my) {
-            const { controller } = creep.room;
-            if (controller.ticksToDowngrade <= 500) {
-                // Resetting downgrade timer is priority.
-                this.switchMode("distribute-controller");
-                return;
-            }
-        }
-        // Check whether there are spawns to transfer energy. Possibility: 1/2.
-        if (_.random(2) > 0 && this.findNextSpawn()) return;
-        // Otherwise, go upgrade controller.
-        this.switchMode("distribute-controller");
     }
     private nextFrameDistributeSpawn(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
+        if (state.mode !== "distribute-spawn") throw new Error("Invalid state.");
         const spawn = state.spawnId && Game.getObjectById(state.spawnId);
         const transferResult = spawn && creep.transfer(spawn, RESOURCE_ENERGY);
         state.isWalking = transferResult === ERR_NOT_IN_RANGE;
@@ -236,37 +303,30 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if (!spawn || transferResult === ERR_NOT_IN_RANGE) {
             if (spawn) creep.moveTo(spawn);
             if (this.tickDull()) return;
-            // Recheck nearest spawn.
-            if (!this.findNextSpawn()) {
-                // We have more energy.
-                if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 5)
-                    this.switchMode("distribute");
-                else
-                    this.switchMode("collect");
-                return;
+            // Recheck nearest spawn / controller.
+            if (!this.transitDistribute()) {
+                if (creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                    this.transitCollect();
             }
+            return;
         } else if (transferResult === ERR_FULL) {
-            if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 4) {
+            if (!this.transitDistribute()) {
                 if (this.tickDull()) return;
-                this.switchMode("distribute");
-            }
-            else {
-                this.switchMode("collect");
+                if (creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                    this.transitCollect();
             }
         }
     }
     private nextFrameDistributeController(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
-        let { controller } = creep.room;
+        if (state.mode !== "distribute-controller") throw new Error("Invalid state.");
+        let controller = state.controllerId && Game.getObjectById(state.controllerId) || creep.room.controller;
         if (!controller?.my) {
-            // We have more energy.
-            if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 4) {
-                if (this.tickDull()) return;
-                this.switchMode("distribute-spawn");
-            } else {
-                this.switchMode("collect");
-            }
+            // Waiting will not help.
+            if (creep.store.energy >= creep.store.getCapacity(RESOURCE_ENERGY) / 4 && this.transitDistribute())
+                return;
+            this.transitCollect();
             return;
         }
         const result = creep.upgradeController(controller);
@@ -275,9 +335,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             case ERR_NOT_IN_RANGE:
                 state.isWalking = true;
                 creep.moveTo(controller);
+                if (this.tickDull()) return;
+                this.transitDistribute();
                 return;
             case ERR_NOT_ENOUGH_RESOURCES:
-                this.switchMode("distribute");
+                this.transitCollect();
                 return;
             default:
                 state.isWalking = false;

@@ -1,29 +1,27 @@
 import _ from "lodash";
 import { Logger } from "src/utility/logger";
-import { SpecializedCreepBase } from "./base";
 import { CollectorCreep } from "./collector";
+import { getSpecializedCreep, knownCreepTypes } from "./registry";
 
 const logger = new Logger("Rusty.SpecializedCreeps");
-const creepCache = new WeakMap<Creep, SpecializedCreepBase>();
 
-function getNewSpecializedCreepInst(creep: Creep): SpecializedCreepBase | undefined {
-    switch (creep.memory.rustyType) {
-        case CollectorCreep.rustyType:
-            return new CollectorCreep(creep);
-        default:
-            // Unknown creep
-            return undefined;
+knownCreepTypes.push(
+    CollectorCreep
+);
+
+function houseKeeping() {
+    const deleted: string[] = [];
+    for (const k of Object.keys(Memory.creeps)) {
+        if (!(k in Game.creeps)) {
+            deleted.push(k);
+            delete Memory.creeps[k];
+        }
     }
+    if (deleted.length)
+        logger.info(`houseKeeping: deleted ${deleted.length} creep memory: ${deleted}.`);
 }
 
-export function getSpecializedCreep(creep: Creep): SpecializedCreepBase | undefined {
-    let c = creepCache.get(creep);
-    if (!c) {
-        c = getNewSpecializedCreepInst(creep);
-        if (c) creepCache.set(creep, c);
-    }
-    return c;
-}
+let nextHouseKeepingTime = 0;
 
 export function onNextFrame() {
     // Drive the creeps
@@ -40,5 +38,10 @@ export function onNextFrame() {
         } catch (err) {
             logger.error(`onNextFrame failed in ${creep}.`, err);
         }
+    }
+    // Housekeeping
+    if (Game.time >= nextHouseKeepingTime) {
+        nextHouseKeepingTime = Game.time + 100;
+        houseKeeping();
     }
 }
