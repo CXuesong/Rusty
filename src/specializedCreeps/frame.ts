@@ -2,7 +2,7 @@ import _ from "lodash";
 import { Logger } from "src/utility/logger";
 import { CollectorCreep } from "./collector";
 import { DefenderCreep } from "./defender";
-import { getSpecializedCreep, knownCreepTypes } from "./registry";
+import { getSpecializedCreep, houseKeeping as registryHouseKeeping, knownCreepTypes } from "./registry";
 
 const logger = new Logger("Rusty.SpecializedCreeps");
 
@@ -43,7 +43,10 @@ export function onNextFrame() {
     }
     // Housekeeping
     if (Game.time >= nextHouseKeepingTime) {
-        nextHouseKeepingTime = Game.time + 100;
+        nextHouseKeepingTime = Game.time + _.random(50, 150);
+        logger.info(`Housekeeping. Next housekeeping time: ${nextHouseKeepingTime}.`);
+        // Order is important to ensure proper disposal.
+        registryHouseKeeping();
         houseKeeping();
     }
 }

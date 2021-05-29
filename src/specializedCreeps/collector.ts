@@ -41,7 +41,7 @@ interface CollectorCreepStateDistributeController extends CollectorCreepStateBas
     controllerId: Id<StructureController>;
 }
 
-type CollectorCreepState
+export type CollectorCreepState
     = CollectorCreepStateIdle
     | CollectorCreepStateCollectSource
     | CollectorCreepStateCollectTombstone

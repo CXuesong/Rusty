@@ -23,7 +23,7 @@ export function buildCreepMemory<TState extends Record<string, any> = {}>(rustyT
 export interface SpecializedCreepType {
     readonly rustyType: string;
     readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;
-    new(creep: Creep): SpecializedCreepBase<any>;
+    new(id: Id<Creep>): SpecializedCreepBase<any>;
 }
 
 export function isSpecializedCreepOf(creep: Creep, type: SpecializedCreepType): boolean {
@@ -45,12 +45,15 @@ export function enumSpecializedCreeps<T extends SpecializedCreepType>(type?: T):
 export abstract class SpecializedCreepBase<TState extends Record<string, any> = {}> {
     public static readonly rustyType: string;
     public static readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;
-    public constructor(public readonly creep: Creep) {
-        if (!creep) throw new TypeError("creep is falsy.");
-        if (!creep.memory) throw new TypeError("creep.memory is falsy.");
+    private _disposed = false;
+    public constructor(public readonly id: Id<Creep>) {
+        if (!id) throw new TypeError("creep is falsy.");
+        void (this.creep);
     }
-    public get id(): Id<Creep> {
-        return this.creep.id;
+    public get creep(): Creep{
+        const inst = Game.getObjectById(this.id);
+        if (!(inst instanceof Creep)) throw new Error(`Unexpected underlying Creep instance: ${inst}.`);
+        return inst;
     }
     public get name(): string {
         return this.creep.name;
@@ -61,13 +64,18 @@ export abstract class SpecializedCreepBase<TState extends Record<string, any> = 
     public set state(value: TState) {
         this.creep.memory.rusty = this.onStateRootChanging(value);
     }
+    public get disposed(): boolean {
+        return this._disposed;
+    }
     public abstract nextFrame(): void;
     protected onStateRootChanging(newState: TState): TState {
         return newState;
     }
     /** Called before creep terminates. */
     public dispose(): void {
-        logger.info(`Dispose memory: ${this.creep}.`)
+        if (this._disposed) return;
+        this._disposed = true;
+        logger.info(`Dispose specialized creep: ${this.creep}.`)
         delete Memory.creeps[this.creep.name];
     }
 }
