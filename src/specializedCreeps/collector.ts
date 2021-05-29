@@ -1,5 +1,6 @@
 import _ from "lodash/index";
 import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
+import { getSpecializedCreep } from "./frame";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 interface CollectorCreepState {
@@ -7,6 +8,7 @@ interface CollectorCreepState {
     spawnId?: Id<StructureSpawn>;
     dullTicks?: number;
     mode: "collect" | "distribute" | "distribute-spawn" | "distribute-controller";
+    isWalking?: boolean;
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -45,7 +47,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private switchMode(mode: CollectorCreepState["mode"]): void {
         const { creep, state } = this;
         creep.say(mode);
-        // console.log(`${creep}: Switch mode: ${state.mode} -> ${mode}.`);
+        console.log(`${creep}: Switch mode: ${state.mode} -> ${mode}.`);
         state.mode = mode;
         this.assignSource();
         this.assignSpawn();
@@ -142,7 +144,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         switch (state.mode) {
             case "collect":
                 if (!creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
-                    this.switchMode("distribute");
+                    if (!this.tryTransferEnergy() && !this.tickDull())
+                        this.switchMode("distribute");
                     return false;
                 }
                 return true;
@@ -158,11 +161,33 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 throw new Error("Invalid state.");
         }
     }
+    private tryTransferEnergy(): boolean {
+        const { creep } = this;
+        const myEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
+        if (!myEnergy) return false;
+        const targets = creep.pos.findInRange(FIND_MY_CREEPS, 1, { filter: c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
+        const target = _(targets)
+            .map(c => getSpecializedCreep(c))
+            .filter(c => !!c)
+            .minBy(c => {
+                // Only transfer energy to walking creeps.
+                if (c instanceof CollectorCreep && c.state.isWalking)
+                    return c.creep.store.getFreeCapacity(RESOURCE_ENERGY);
+                return undefined;
+            });
+        if (target) {
+            creep.transfer(target.creep, RESOURCE_ENERGY);
+            return true;
+        }
+        return false;
+    }
     private nextFrameCollect(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
         const source = state.sourceId && Game.getObjectById(state.sourceId);
         const harvestResult = source && creep.harvest(source);
+        console.log(`Creep [${creep}]: ${harvestResult}`)
+        state.isWalking = harvestResult === ERR_NOT_IN_RANGE;
         if (!source || harvestResult === ERR_NOT_IN_RANGE) {
             if (source) creep.moveTo(source);
             if (this.tickDull()) return;
@@ -178,6 +203,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         } else if (harvestResult === ERR_NOT_ENOUGH_RESOURCES) {
             if (source.ticksToRegeneration > 10)
                 this.findNextSource();
+            else
+                creep.say("Wait Regn");
         }
     }
     private nextFrameDistribute(): void {
@@ -201,6 +228,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep, state } = this;
         const spawn = state.spawnId && Game.getObjectById(state.spawnId);
         const transferResult = spawn && creep.transfer(spawn, RESOURCE_ENERGY);
+        state.isWalking = transferResult === ERR_NOT_IN_RANGE;
+        console.log(`creep ${creep}: ${transferResult}`)
         if (!spawn || transferResult === ERR_NOT_IN_RANGE) {
             if (spawn) creep.moveTo(spawn);
             if (this.tickDull()) return;
@@ -225,9 +254,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private nextFrameDistributeController(): void {
         if (!this.checkEnergyConstraint()) return;
-        const { creep } = this;
+        const { creep, state } = this;
         let { controller } = creep.room;
-        if (!controller || !controller.my) {
+        if (!controller?.my) {
             // We have more energy.
             if (creep.store.getUsedCapacity(RESOURCE_ENERGY) >= creep.store.getCapacity(RESOURCE_ENERGY) / 4) {
                 if (this.tickDull()) return;
@@ -239,11 +268,14 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         switch (creep.upgradeController(controller)) {
             case ERR_NOT_IN_RANGE:
+                state.isWalking = true;
                 creep.moveTo(controller);
                 return;
             case ERR_NOT_ENOUGH_RESOURCES:
                 this.switchMode("distribute");
                 return;
+            default:
+                state.isWalking = false;
         }
     }
 }

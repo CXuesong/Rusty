@@ -7,14 +7,14 @@ interface RustyRoomMemory {
     nextSpawnTime?: number;
 }
 
-export function onNextFrame(): void {
-    for (const room of _(Game.rooms).values()) {
-        if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
-        const rusty = room.memory.rusty as RustyRoomMemory;
-        const { nextSpawnTime } = rusty;
-        if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
-            rusty.nextSpawnTime = Game.time + _.random(3, 10);
-            const spawns = room.find(FIND_MY_SPAWNS);
+export function onRoomNextFrame(room: Room): void {
+    if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
+    const rusty = room.memory.rusty as RustyRoomMemory;
+    const { nextSpawnTime } = rusty;
+    if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
+        rusty.nextSpawnTime = Game.time + _.random(3, 10);
+        const spawns = room.find(FIND_MY_SPAWNS);
+        if (spawns.length) {
             const sources = room.find(FIND_SOURCES_ACTIVE);
             const creeps = room.find(FIND_MY_CREEPS);
             const expectedCollectors = [2, (spawns.length + sources.length) * 8];
@@ -35,6 +35,16 @@ export function onNextFrame(): void {
                 // Spawn collectors if necessary.
                 trySpawn(spawns, s => CollectorCreep.spawn(s));
             }
+        }
+    }
+}
+
+export function onNextFrame(): void {
+    for (const room of _(Game.rooms).values()) {
+        try {
+            onRoomNextFrame(room);
+        } catch (err) {
+            console.log(`Room: ${room}: ${err.stack || err}`);
         }
     }
 }
