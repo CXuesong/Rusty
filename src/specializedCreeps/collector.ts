@@ -1,12 +1,11 @@
 import _ from "lodash/index";
-import { evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
+import { evadeBlockers, evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
 import { Logger } from "src/utility/logger";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 interface CollectorCreepStateBase {
     mode: string;
-    dullTicks?: number;
     isWalking?: boolean;
 }
 
@@ -17,7 +16,7 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
 
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
     mode: "collect";
-    destId: string;
+    destId: Id<Source> | Id<Tombstone> | Id<Resource>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
@@ -34,14 +33,23 @@ interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect 
     readonly resourceId: Id<Resource>;
 }
 
-interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateBase {
-    mode: "distribute-spawn";
+interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
+    mode: "distribute";
+    destId: Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite>;
+    /** Expiry at which the target and path cache can be considered as "invalidated". */
+    nextEvalTime: number;
+}
+
+interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateDistribute {
     spawnId: Id<StructureSpawn>;
 }
 
-interface CollectorCreepStateDistributeController extends CollectorCreepStateBase {
-    mode: "distribute-controller";
+interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
     controllerId: Id<StructureController>;
+}
+
+interface CollectorCreepStateDistributeConstruction extends CollectorCreepStateDistribute {
+    constructionSiteId: Id<ConstructionSite>;
 }
 
 export type CollectorCreepState
@@ -50,29 +58,51 @@ export type CollectorCreepState
     | CollectorCreepStateCollectTombstone
     | CollectorCreepStateCollectResource
     | CollectorCreepStateDistributeSpawn
-    | CollectorCreepStateDistributeController;
+    | CollectorCreepStateDistributeController
+    | CollectorCreepStateDistributeConstruction;
 
-let occupiedDests: Map<Id<Tombstone> | Id<Resource>, Id<Creep>> | undefined;
+type CollectorDestId = Id<Tombstone> | Id<Resource> | Id<Source> | Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite>;
 
-function getExclusiveCollector(id: Id<Tombstone> | Id<Resource>): Id<Creep> | undefined {
+let occupiedDests: Map<CollectorDestId, Set<Id<Creep>>> | undefined;
+const emptySet: ReadonlySet<any> = {
+    entries: function* () { },
+    forEach: () => { },
+    has: () => false,
+    keys: function* () { },
+    size: 0,
+    values: function* () { },
+    [Symbol.iterator]: function* () { },
+}
+
+function getTargetingCollectors(id: CollectorDestId): ReadonlySet<Id<Creep>> {
     if (!occupiedDests) {
         occupiedDests = new Map();
         for (const c of enumSpecializedCreeps(CollectorCreep)) {
-            if (c.state.mode === "collect") {
-                if ("tombstoneId" in c.state) occupiedDests.set(c.state.tombstoneId, c.id);
-                else if ("resourceId" in c.state) occupiedDests.set(c.state.resourceId, c.id);
-            }
+            if (c.state.mode === "collect")
+                addTargetingCollector(c.state.destId, c.id);
+            else if (c.state.mode === "distribute")
+                addTargetingCollector(c.state.destId, c.id);
         }
     }
-    return occupiedDests.get(id);
+    return occupiedDests.get(id) || emptySet;
 }
 
-function declareExclusiveDestCollector(id: Id<Tombstone> | Id<Resource>, collector?: Id<Creep>): void {
+function addTargetingCollector(id: CollectorDestId, collector: Id<Creep>): void {
     if (!occupiedDests) return;
-    if (collector)
-        occupiedDests.set(id, collector);
-    else
-        occupiedDests.delete(id);
+    let set = occupiedDests.get(id);
+    if (!set) {
+        set = new Set();
+        occupiedDests.set(id, set);
+    }
+    set.add(collector);
+}
+
+function removeTargetingCollector(id: CollectorDestId, collector: Id<Creep>): void {
+    if (!occupiedDests) return;
+    const set = occupiedDests.get(id);
+    if (!set) return;
+    set.delete(collector);
+    if (!set.size) occupiedDests.delete(id);
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -98,11 +128,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             case "collect":
                 this.nextFrameCollect();
                 break;
-            case "distribute-spawn":
-                this.nextFrameDistributeSpawn();
-                break;
-            case "distribute-controller":
-                this.nextFrameDistributeController();
+            case "distribute":
+                this.nextFrameDistribute();
                 break;
             default:
                 this.transitIdle();
@@ -115,39 +142,35 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             creep.say(newState.mode.split("-").map(s => s.substr(0, 4)).join("-"));
             this.logger.info(`Switch mode: ${state.mode} -> ${newState.mode}.`);
         }
-        if (state.mode === "collect") {
-            if ("tombstoneId" in state) declareExclusiveDestCollector(state.tombstoneId);
-            if ("resourceId" in state) declareExclusiveDestCollector(state.resourceId);
-        }
-        if (newState.mode === "collect") {
-            if ("tombstoneId" in state) declareExclusiveDestCollector(state.tombstoneId, this.id);
-            if ("resourceId" in state) declareExclusiveDestCollector(state.resourceId, this.id);
+        if ((state.mode === "collect" || state.mode === "distribute")
+            && (newState.mode !== state.mode || !("destId" in newState) || newState.destId !== state.destId)) {
+            removeTargetingCollector(state.destId, this.id);
+            if (newState.mode === "collect" || newState.mode === "distribute")
+                addTargetingCollector(newState.destId, this.id);
         }
         return newState;
-    }
-    private tickDull(): boolean {
-        const { state } = this;
-        state.dullTicks = (state.dullTicks || _.random(2, 10)) - 1;
-        if (state.dullTicks <= 0) {
-            state.dullTicks = undefined;
-            return false;
-        }
-        return true;
     }
     private transitCollect(): boolean {
         const { creep } = this;
         const { room } = creep;
+        const reachedMaxCollectors = (id: CollectorDestId, maxPeers: number) => {
+            const c = getTargetingCollectors(id);
+            const peers = c.size - (c.has(this.id) ? 1 : 0);
+            return peers <= maxPeers;
+        }
         const resources = room.find(FIND_DROPPED_RESOURCES, {
             filter: r => r.resourceType === RESOURCE_ENERGY
-                && (getExclusiveCollector(r.id) || this) === this
+                && !reachedMaxCollectors(r.id, 1)
                 && r.amount * (1 - r.pos.getRangeTo(creep) * 1.6 / ENERGY_DECAY) > 20
         }) as Resource<RESOURCE_ENERGY>[];
         const tombstones = room.find(FIND_TOMBSTONES, {
             filter: t => t.store.energy >= 20 && t.ticksToDecay >= 3
-                && (getExclusiveCollector(t.id) || this) === this
+                && !reachedMaxCollectors(t.id, 2)
         });
         const sources = room.find(FIND_SOURCES_ACTIVE, {
             filter: t => t.energy >= 50 || t.energyCapacity >= 100 && t.ticksToRegeneration <= 20
+                // Allow queuing up
+                && !reachedMaxCollectors(t.id, 10)
         });
         const goals = [...resources, ...tombstones, ...sources];
         const nearest = findNearestPath(creep.pos, goals, {
@@ -158,6 +181,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     return false;
                 }
                 const costs = new PathFinder.CostMatrix();
+                evadeBlockers(room, costs);
                 evadeHostileCreeps(room, costs);
                 return costs;
             }
@@ -185,38 +209,79 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private transitDistribute(): boolean {
         const { creep, state } = this;
-        const { controller } = creep.room;
-        if (state.mode === "distribute-controller") {
-            if (controller?.my) return true;
-        } else if (state.mode === "distribute-spawn") {
-            const s = Game.getObjectById(state.spawnId);
-            if (s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) return true;
+        const { room } = creep;
+        const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
+            const c = getTargetingCollectors(id);
+            const peers = c.size - (c.has(this.id) ? 1 : 0);
+            return peers <= maxPeers;
         }
-        let controllerPriority = 0.3;
+        if (state.mode === "distribute") {
+            if ("controllerId" in state) {
+                const c = Game.getObjectById(state.controllerId);
+                if (c?.my) return true;
+            } else if ("spawnId" in state) {
+                const s = Game.getObjectById(state.spawnId);
+                if (s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 5) return true;
+            } else if ("constructionSiteId" in state) {
+                const s = Game.getObjectById(state.constructionSiteId);
+                if (s && s.progress < s.progressTotal) return true;
+            }
+        }
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
+        const { controller } = room;
+        let controllerPriority: number;
         if (controller?.my) {
-            if (controller.ticksToDowngrade <= 500) {
+            if (controller.ticksToDowngrade <= 1500 && !reachedMaxPeers(controller.id, 4)) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
+            } else if (constructionSites.length > 2) {
+                controllerPriority = 0
+            } else if (!reachedMaxPeers(controller.id, 6)) {
+                controllerPriority = 0.05;
+            } else {
+                controllerPriority = 0;
             }
+        } else {
+            controllerPriority = 0;
         }
-        if (controllerPriority < 1 && _.random(true) > controllerPriority) {
-            const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
-                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
-                // costCallback: (roomName, cost) => {
-                //     const room = Game.rooms[roomName];
-                //     if (!room) {
-                //         this.logger.warning(`transitDistribute: Unable to check room ${roomName}.`);
-                //         return;
-                //     }
-                // }
-            });
-            if (spawn) {
-                this.state = { mode: "distribute-spawn", spawnId: spawn.id };
-                return true;
+        const nextEvalTime = Game.time + _.random(4, 10);
+        const roomCallback = (roomName: string, costMatrix?: CostMatrix) => {
+            const room = Game.rooms[roomName];
+            if (!room) {
+                this.logger.warning(`Unable to check room ${roomName}.`);
+                return false;
             }
+            const costs = costMatrix || new PathFinder.CostMatrix();
+            evadeBlockers(room, costs);
+            evadeHostileCreeps(room, costs);
+            return costs;
+        };
+        if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {
+            const spawns = room.find(FIND_MY_SPAWNS, { filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
+            const goals = [...constructionSites, ...spawns];
+            const nearest = findNearestPath(creep.pos, goals, { maxRooms: 1, roomCallback });
+            if (!nearest) return false;
+            const destId = nearest.goal.id;
+            this.logger.info(`Collect ${nearest.goal}.`);
+            if (nearest.goal instanceof StructureSpawn) {
+                this.state = { mode: "distribute", spawnId: nearest.goal.id, destId, nextEvalTime };
+            }
+            else if (nearest.goal instanceof ConstructionSite) {
+                this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
+            } else
+                throw new Error("Unexpected code path.");
+            this.pathCache = { targetId: destId, targetPath: nearest.path };
+            return true;
         }
         if (controller?.my) {
-            this.state = { mode: "distribute-controller", controllerId: controller.id }
+            this.state = { mode: "distribute", controllerId: controller.id, destId: controller.id, nextEvalTime }
+            this.pathCache = {
+                targetId: controller.id,
+                targetPath: creep.pos.findPathTo(controller.pos, {
+                    maxRooms: 1,
+                    costCallback: (n, c) => roomCallback(n, c) || c
+                })
+            };
             return true;
         }
         return false;
@@ -224,21 +289,22 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private checkEnergyConstraint(): boolean {
         const { creep, state } = this;
         switch (state.mode) {
+            case "idle":
+                return true;
             case "collect":
                 if (!creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
                     this.transitDistribute();
                     return false;
                 }
                 return true;
-            case "distribute-controller":
-            case "distribute-spawn":
+            case "distribute":
                 if (!creep.store.energy) {
                     this.transitCollect();
                     return false;
                 }
                 return true;
             default:
-                throw new Error("Invalid state:" + state.mode);
+                throw new Error("Invalid state.");
         }
     }
     // private tryTransferEnergy(): boolean {
@@ -323,57 +389,52 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             return;
         }
     }
-    private nextFrameDistributeSpawn(): void {
+    private nextFrameDistribute(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
-        if (state.mode !== "distribute-spawn") throw new Error("Invalid state.");
-        const spawn = state.spawnId && Game.getObjectById(state.spawnId);
-        const transferResult = spawn && creep.transfer(spawn, RESOURCE_ENERGY);
-        state.isWalking = transferResult === ERR_NOT_IN_RANGE;
-        this.logger.trace(`nextFrameDistributeSpawn: creep.transfer(${spawn}) -> ${transferResult}.`);
-        if (!spawn || transferResult === ERR_NOT_IN_RANGE) {
-            if (spawn) creep.moveTo(spawn);
-            if (this.tickDull()) return;
-            // Recheck nearest spawn / controller.
-            if (!this.transitDistribute()) {
-                if (creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-                    this.transitCollect();
+        if (state.mode !== "distribute") throw new Error("Invalid state.");
+        let result;
+        let dest;
+        if ("spawnId" in state) {
+            const spawn = dest = Game.getObjectById(state.spawnId);
+            result = spawn ? creep.transfer(spawn, RESOURCE_ENERGY) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
+        } else if ("constructionSiteId" in state) {
+            const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
+            result = constructionSite ? creep.build(constructionSite) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.build -> ${result}.`);
+        } else {
+            const controller = dest = Game.getObjectById(state.controllerId);
+            result = controller ? creep.upgradeController(controller) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.upgradeController -> ${result}.`);
+        }
+        state.isWalking = result === ERR_NOT_IN_RANGE;
+        if (result == null || result === ERR_NOT_IN_RANGE) {
+            if (
+                // Dest is gone.
+                !dest
+                // Need to prepare next path.
+                || Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
+                // Transient cache lost.
+                || this.pathCache?.targetId !== dest.id) {
+            } {
+                // Recheck nearest spawn / controller.
+                if (!this.transitDistribute()) {
+                    this.transitIdle();
+                    return;
+                }
             }
             return;
-        } else if (transferResult === ERR_FULL) {
-            if (!this.transitDistribute()) {
-                if (this.tickDull()) return;
-                if (creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-                    this.transitCollect();
-            }
-        }
-    }
-    private nextFrameDistributeController(): void {
-        if (!this.checkEnergyConstraint()) return;
-        const { creep, state } = this;
-        if (state.mode !== "distribute-controller") throw new Error("Invalid state.");
-        let controller = state.controllerId && Game.getObjectById(state.controllerId) || creep.room.controller;
-        if (!controller?.my) {
-            // Waiting will not help.
-            if (creep.store.energy >= creep.store.getCapacity(RESOURCE_ENERGY) / 4 && this.transitDistribute())
-                return;
-            this.transitCollect();
+        }if (result === ERR_NOT_ENOUGH_RESOURCES) {
+            if (!this.transitCollect)
+                this.transitIdle();
             return;
         }
-        const result = creep.upgradeController(controller);
-        this.logger.trace(`nextFrameDistributeController: creep.upgradeController(${controller}) -> ${result}.`);
-        switch (result) {
-            case ERR_NOT_IN_RANGE:
-                state.isWalking = true;
-                creep.moveTo(controller);
-                if (this.tickDull()) return;
-                this.transitDistribute();
-                return;
-            case ERR_NOT_ENOUGH_RESOURCES:
-                this.transitCollect();
-                return;
-            default:
-                state.isWalking = false;
+        if (result === ERR_FULL) {
+            if (creep.store.energy > 25 && this.transitDistribute()) return;
+            if (creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0 && this.transitCollect()) return;
+            this.transitIdle();
+            return;
         }
     }
 }

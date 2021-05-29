@@ -1,8 +1,15 @@
 import _ from "lodash";
 
+export function evadeBlockers(room: Room, cost: CostMatrix): void {
+    const creeps = room.find(FIND_CREEPS);
+    for (const c of creeps)
+        cost.set(c.pos.x, c.pos.y, 255);
+}
+
 export function evadeHostileCreeps(room: Room, cost: CostMatrix): void {
     const hostile = room.find(FIND_HOSTILE_CREEPS);
     for (const h of hostile) {
+        console.log(`Hostile: ${h}`);
         const { x, y } = h.pos;
         if (h.getActiveBodyparts(RANGED_ATTACK)) {
             for (let xd = -3; xd <= 3; xd++)
