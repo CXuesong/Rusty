@@ -13,13 +13,14 @@ loggerLevels.push(
     ["Rusty.SpecializedCreeps.CollectorCreep.#DragonflyPetal", LogLevel.trace]
 );
 
-let volatilePersistedTicks = 0;
+let runtimeTicks = 0;
+let runtimeCpuTimeTotal = 0;
 (global as unknown as Record<string, unknown>)["ConsoleUtils"] = ConsoleUtils;
 
 export function loop() {
     const logger = new Logger("Rusty.loop");
-    logger.info(`Started. Time: ${Game.time} tks; Bucket: ${Game.cpu.bucket}; VolatilePersisted: ${volatilePersistedTicks} tks.`);
-    volatilePersistedTicks++;
+    logger.info(`Started. Time: ${Game.time} tks; Bucket: ${Game.cpu.bucket}; Runtime: ${runtimeTicks} tks.`);
+    runtimeTicks++;
     // const startTime = performance.now();
     try {
         RustyRoom.onNextFrame();
@@ -29,6 +30,11 @@ export function loop() {
     } finally {
         // const duration = Math.round(performance.now() - startTime);
         // console.log(`Rusty primary loop: Finished in ${duration}ms.`);
-        logger.info(`CPU time: ${Math.round(Game.cpu.getUsed() * 1000) / 1000}.`);
+        const usedTime = Game.cpu.getUsed();
+        runtimeCpuTimeTotal += usedTime;
+        const ut = Math.round(usedTime * 1000) / 1000;
+        const av = Math.round(runtimeCpuTimeTotal / runtimeTicks * 1000) / 1000;
+        const tt = Math.round(runtimeCpuTimeTotal);
+        logger.info(`CPU time: ${ut},${av},${tt}.`);
     }
 }
