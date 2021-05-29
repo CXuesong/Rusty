@@ -14,6 +14,15 @@ const logger = new Logger("Rusty.Room");
 export function onRoomNextFrame(room: Room): void {
     if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
     const rusty = room.memory.rusty as RustyRoomMemory;
+    const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } }) as StructureTower[];
+    if (towers.length) {
+        var hostiles = room.find(FIND_HOSTILE_CREEPS);
+        if (hostiles.length) {
+            var username = hostiles[0].owner.username;
+            Game.notify(`User ${username} spotted in room ${room.name}`);
+            towers.forEach(tower => tower.attack(_(hostiles).first()!));
+        }
+    }
     const { nextSpawnTime } = rusty;
     if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
         rusty.nextSpawnTime = Game.time + _.random(3, 10);
@@ -23,14 +32,17 @@ export function onRoomNextFrame(room: Room): void {
             const sources = room.find(FIND_SOURCES_ACTIVE);
             const creeps = room.find(FIND_MY_CREEPS);
             const defenders = _(creeps).filter(c => isSpecializedCreepOf(c, DefenderCreep)).size();
-            if (defenders < 1) {
-                trySpawn(spawns, s => DefenderCreep.spawn(s));
-                return;
-            } else {
-                const hostileCreeps = room.find(FIND_HOSTILE_CREEPS).length;
-                if (hostileCreeps > 0 && defenders < hostileCreeps + 1) {
+            const collectors = _(creeps).filter(c => isSpecializedCreepOf(c, CollectorCreep)).size();
+            if (collectors >= 2) {
+                if (defenders < 1) {
                     trySpawn(spawns, s => DefenderCreep.spawn(s));
                     return;
+                } else {
+                    const hostileCreeps = room.find(FIND_HOSTILE_CREEPS).length;
+                    if (hostileCreeps > 0 && defenders < hostileCreeps + 1) {
+                        trySpawn(spawns, s => DefenderCreep.spawn(s));
+                        return;
+                    }
                 }
             }
             const expectedCollectors = [2, (spawns.length + sources.length) * 8];
@@ -44,7 +56,6 @@ export function onRoomNextFrame(room: Room): void {
                 else
                     expectedCollectors.push(40);
             }
-            const collectors = _(creeps).filter(c => isSpecializedCreepOf(c, CollectorCreep)).size();
             const expc = Math.max(...expectedCollectors)
             room.visual.text(`Collectors: ${collectors}/[${expectedCollectors}].`, 0, 0, { align: "left" });
             if (collectors < expc) {
