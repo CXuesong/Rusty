@@ -4,7 +4,7 @@ import { SpecializedCreepBase } from "./base";
 import { CollectorCreep } from "./collector";
 
 const logger = new Logger("Rusty.SpecializedCreeps");
-const creepCache = new Map<Id<Creep>, SpecializedCreepBase>();
+const creepCache = new WeakMap<Creep, SpecializedCreepBase>();
 
 function getNewSpecializedCreepInst(creep: Creep): SpecializedCreepBase | undefined {
     switch (creep.memory.rustyType) {
@@ -17,10 +17,10 @@ function getNewSpecializedCreepInst(creep: Creep): SpecializedCreepBase | undefi
 }
 
 export function getSpecializedCreep(creep: Creep): SpecializedCreepBase | undefined {
-    let c = creepCache.get(creep.id);
+    let c = creepCache.get(creep);
     if (!c) {
         c = getNewSpecializedCreepInst(creep);
-        if (c) creepCache.set(creep.id, c);
+        if (c) creepCache.set(creep, c);
     }
     return c;
 }

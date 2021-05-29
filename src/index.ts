@@ -6,12 +6,17 @@ import { Logger, loggerLevels, LogLevel } from "./utility/logger";
 
 loggerLevels.push(
     ["Rusty", LogLevel.warning],
-    ["Rusty.loop", LogLevel.info]
+    ["Rusty.loop", LogLevel.info],
+    ["Rusty.SpecializedCreeps.CollectorCreep.#Slateleg", LogLevel.trace],
+    ["Rusty.SpecializedCreeps.CollectorCreep.#DragonflyPetal", LogLevel.trace]
 );
+
+let volatilePersistedTicks = 0;
 
 export function loop() {
     const logger = new Logger("Rusty.loop");
-    logger.info(`Started. Time: ${Game.time}; Bucket: ${Game.cpu.bucket}.`);
+    logger.info(`Started. Time: ${Game.time} tks; Bucket: ${Game.cpu.bucket}; VolatilePersisted: ${volatilePersistedTicks} tks.`);
+    volatilePersistedTicks++;
     // const startTime = performance.now();
     try {
         RustyRoom.onNextFrame();
