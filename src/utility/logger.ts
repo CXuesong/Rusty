@@ -43,15 +43,15 @@ export class Logger {
         }
     }
     public trace(...message: unknown[]) {
-        this.log(LogLevel.trace, message);
+        this.log(LogLevel.trace, ...message);
     }
     public info(...message: unknown[]) {
-        this.log(LogLevel.info, message);
+        this.log(LogLevel.info, ...message);
     }
     public warning(...message: unknown[]) {
-        this.log(LogLevel.warning, message);
+        this.log(LogLevel.warning, ...message);
     }
     public error(...message: unknown[]) {
-        this.log(LogLevel.error, message);
+        this.log(LogLevel.error, ...message);
     }
 }

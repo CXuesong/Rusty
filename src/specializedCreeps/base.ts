@@ -47,7 +47,7 @@ export abstract class SpecializedCreepBase<TState extends Record<string, any> = 
     public static readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;
     private _disposed = false;
     public constructor(public readonly id: Id<Creep>) {
-        if (!id) throw new TypeError("creep is falsy.");
+        if (!id) throw new TypeError("Creep id is falsy.");
         void (this.creep);
     }
     public get creep(): Creep{

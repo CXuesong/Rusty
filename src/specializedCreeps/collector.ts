@@ -12,11 +12,14 @@ interface CollectorCreepStateBase {
 
 interface CollectorCreepStateIdle extends CollectorCreepStateBase {
     mode: "idle";
+    nextEvalTime: number;
 }
 
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
     mode: "collect";
     destId: string;
+    /** Expiry at which the target and path cache can be considered as "invalidated". */
+    nextEvalTime: number;
 }
 
 interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
@@ -75,6 +78,7 @@ function declareExclusiveDestCollector(id: Id<Tombstone> | Id<Resource>, collect
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
+    private pathCache: { targetId: string; targetPath: RoomPosition[] | PathStep[] } | undefined;
     public static spawn(spawn: StructureSpawn): string | SpecializedSpawnCreepErrorCode {
         const name = spawnCreep(spawn, {
             [CARRY]: 2,
@@ -82,13 +86,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             [WORK]: 1,
         });
         if (typeof name === "string") {
-            initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "idle" });
+            initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "idle", nextEvalTime: Game.time });
         }
         return name;
     }
     public nextFrame(): void {
         const { state } = this;
         switch (state.mode) {
+            case "idle":
+                this.nextFrameIdle();
             case "collect":
                 this.nextFrameCollect();
                 break;
@@ -99,7 +105,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.nextFrameDistributeController();
                 break;
             default:
-                this.transitCollect();
+                this.transitIdle();
                 break;
         }
     }
@@ -157,15 +163,24 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
         });
         if (!nearest) return false;
+        const destId = nearest.goal.id;
+        const nextEvalTime = Game.time + _.random(4, 10);
         this.logger.info(`Collect ${nearest.goal}.`);
-        if (nearest.goal instanceof Resource)
-            this.state = { mode: "collect", resourceId: nearest.goal.id, destId: nearest.goal.id };
-        else if (nearest.goal instanceof Tombstone)
-            this.state = { mode: "collect", tombstoneId: nearest.goal.id, destId: nearest.goal.id };
-        else if (nearest.goal instanceof Source)
-            this.state = { mode: "collect", sourceId: nearest.goal.id, destId: nearest.goal.id };
-        else
+        if (nearest.goal instanceof Resource) {
+            this.state = { mode: "collect", resourceId: nearest.goal.id, destId, nextEvalTime };
+        }
+        else if (nearest.goal instanceof Tombstone) {
+            this.state = { mode: "collect", tombstoneId: nearest.goal.id, destId, nextEvalTime };
+        }
+        else if (nearest.goal instanceof Source) {
+            this.state = { mode: "collect", sourceId: nearest.goal.id, destId, nextEvalTime };
+        } else
             throw new Error("Unexpected code path.");
+        this.pathCache = { targetId: destId, targetPath: nearest.path };
+        return true;
+    }
+    private transitIdle(): boolean {
+        this.state = { mode: "idle", nextEvalTime: Game.time + _.random(5) };
         return true;
     }
     private transitDistribute(): boolean {
@@ -247,6 +262,16 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     //     }
     //     return false;
     // }
+    private nextFrameIdle(): void {
+        const { creep, state } = this;
+        if (state.mode !== "idle") throw new Error("Invalid state.");
+        if (Game.time < state.nextEvalTime) return;
+        if (creep.store.energy < 40 && this.transitCollect())
+            return;
+        if (creep.store.energy > 10 && this.transitDistribute())
+            return;
+        this.transitIdle();
+    }
     private nextFrameCollect(): void {
         if (!this.checkEnergyConstraint()) return;
         const { creep, state } = this;
@@ -268,23 +293,35 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         state.isWalking = result === ERR_NOT_IN_RANGE;
         if (result == null || result === ERR_NOT_IN_RANGE) {
-            if (dest) creep.moveTo(dest);
-            if (this.tickDull()) return;
-            // Recheck nearest source.
-            if (!this.transitCollect()) {
-                if (creep.store.energy > 0) {
-                    this.transitDistribute();
-                    return;
+            let moveResult = undefined;
+            if (dest) {
+                if (
+                    // Need to prepare next path.
+                    Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
+                    // Transient cache lost.
+                    || this.pathCache?.targetId !== dest.id) {
+                } {
+                    if (!this.transitCollect()) {
+                        this.transitIdle();
+                        return;
+                    }
                 }
-                creep.say("Idle");
-                this.logger.warning("nextFrameCollect: Nothing to do.");
-                return;
+                if (!creep.fatigue) {
+                    if (!this.pathCache) throw new Error("Assertion failure.");
+                    moveResult = creep.moveByPath(this.pathCache.targetPath);
+                    if (moveResult !== OK) {
+                        this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                    }
+                }
             }
-        } else if (result === ERR_NOT_ENOUGH_RESOURCES) {
+            return;
+        }
+        if (result === ERR_NOT_ENOUGH_RESOURCES) {
             if (dest instanceof Source && dest.ticksToRegeneration > 10)
                 creep.say("Wait Regn");
             else
-                this.transitCollect();
+                this.transitCollect() || this.transitIdle();
+            return;
         }
     }
     private nextFrameDistributeSpawn(): void {
