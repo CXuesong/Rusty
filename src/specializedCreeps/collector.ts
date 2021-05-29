@@ -215,16 +215,45 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const peers = c.size - (c.has(this.id) ? 1 : 0);
             return peers <= maxPeers;
         }
+        const roomCallback = (roomName: string, costMatrix?: CostMatrix) => {
+            const room = Game.rooms[roomName];
+            if (!room) {
+                this.logger.warning(`Unable to check room ${roomName}.`);
+                return false;
+            }
+            const costs = costMatrix || new PathFinder.CostMatrix();
+            evadeBlockers(room, costs);
+            evadeHostileCreeps(room, costs);
+            return costs;
+        };
         if (state.mode === "distribute") {
+            const reEvaluatePath = (target: StructureController | StructureSpawn | ConstructionSite) => {
+                this.pathCache = {
+                    targetId: target.id,
+                    targetPath: creep.pos.findPathTo(target.pos, {
+                        maxRooms: 1,
+                        costCallback: (n, c) => roomCallback(n, c) || c
+                    })
+                };
+            }
             if ("controllerId" in state) {
                 const c = Game.getObjectById(state.controllerId);
-                if (c?.my) return true;
+                if (c?.my) {
+                    reEvaluatePath(c);
+                    return true;
+                }
             } else if ("spawnId" in state) {
                 const s = Game.getObjectById(state.spawnId);
-                if (s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 5) return true;
+                if (s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 10) {
+                    reEvaluatePath(s);
+                    return true;
+                }
             } else if ("constructionSiteId" in state) {
                 const s = Game.getObjectById(state.constructionSiteId);
-                if (s && s.progress < s.progressTotal) return true;
+                if (s && s.progress < s.progressTotal) {
+                    reEvaluatePath(s);
+                    return true;
+                }
             }
         }
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
@@ -245,17 +274,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             controllerPriority = 0;
         }
         const nextEvalTime = Game.time + _.random(4, 10);
-        const roomCallback = (roomName: string, costMatrix?: CostMatrix) => {
-            const room = Game.rooms[roomName];
-            if (!room) {
-                this.logger.warning(`Unable to check room ${roomName}.`);
-                return false;
-            }
-            const costs = costMatrix || new PathFinder.CostMatrix();
-            evadeBlockers(room, costs);
-            evadeHostileCreeps(room, costs);
-            return costs;
-        };
         if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {
             const spawns = room.find(FIND_MY_SPAWNS, { filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
             const goals = [...constructionSites, ...spawns];
@@ -424,8 +442,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     return;
                 }
             }
+            if (!creep.fatigue) {
+                if (!this.pathCache) throw new Error("Assertion failure.");
+                const moveResult = creep.moveByPath(this.pathCache.targetPath);
+                if (moveResult !== OK) {
+                    this.logger.warning(`nextFrameDistribute: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                }
+            }
             return;
-        }if (result === ERR_NOT_ENOUGH_RESOURCES) {
+        } if (result === ERR_NOT_ENOUGH_RESOURCES) {
             if (!this.transitCollect)
                 this.transitIdle();
             return;
