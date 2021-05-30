@@ -159,24 +159,24 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private transitCollect(): boolean {
         const { creep } = this;
         const { room } = creep;
-        const reachedMaxCollectors = (id: CollectorDestId, maxPeers: number) => {
+        const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
             const c = getTargetingCollectors(id);
             const peers = c.size - (c.has(this.id) ? 1 : 0);
-            return peers <= maxPeers;
+            return peers >= maxPeers;
         }
         const resources = room.find(FIND_DROPPED_RESOURCES, {
             filter: r => r.resourceType === RESOURCE_ENERGY
-                && !reachedMaxCollectors(r.id, 1)
+                && !reachedMaxPeers(r.id, 1)
                 && r.amount * (1 - r.pos.getRangeTo(creep) * 1.6 / ENERGY_DECAY) > 20
         }) as Resource<RESOURCE_ENERGY>[];
         const tombstones = room.find(FIND_TOMBSTONES, {
             filter: t => t.store.energy >= 20 && t.ticksToDecay >= 3
-                && !reachedMaxCollectors(t.id, 2)
+                && !reachedMaxPeers(t.id, 2)
         });
         const sources = room.find(FIND_SOURCES_ACTIVE, {
             filter: t => t.energy >= 50 || t.energyCapacity >= 100 && t.ticksToRegeneration <= 20
                 // Allow queuing up
-                && !reachedMaxCollectors(t.id, 10)
+                && !reachedMaxPeers(t.id, 10)
         });
         const goals = [...resources, ...tombstones, ...sources];
         const nearest = findNearestPath(creep.pos, goals, {
@@ -220,7 +220,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
             const c = getTargetingCollectors(id);
             const peers = c.size - (c.has(this.id) ? 1 : 0);
-            return peers <= maxPeers;
+            return peers >= maxPeers;
         }
         const roomCallback = (roomName: string, costMatrix?: CostMatrix) => {
             const room = Game.rooms[roomName];

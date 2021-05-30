@@ -34,6 +34,7 @@ export function findNearestPath<T extends RoomObject>(origin: RoomPosition, goal
     cost: number;
 } | undefined {
     const rawGoals = buildPathFinderGoals(goals);
+    if (!rawGoals.length) throw new Error("goals is empty.");
     const result = PathFinder.search(origin, rawGoals, opts);
     if (result.incomplete) return undefined;
     const lastPos = _(result.path).last() || origin;
