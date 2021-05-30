@@ -1,7 +1,8 @@
 import _ from "lodash/index";
-import { evadeBlockers, evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
 import { Logger } from "src/utility/logger";
+import { evadeBlockers, evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
+import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 interface CollectorCreepStateBase {
@@ -16,21 +17,30 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
 
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
     mode: "collect";
-    destId: Id<Source> | Id<Tombstone> | Id<Resource>;
+    destId: Id<Source> | Id<Tombstone> | Id<Resource> | Id<Creep>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
 interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
     readonly sourceId: Id<Source>;
+    sourceDistance: 0;
+    relayTo?: Id<Creep>;
 }
 
 interface CollectorCreepStateCollectTombstone extends CollectorCreepStateCollect {
     readonly tombstoneId: Id<Tombstone>;
 }
 
+// Resource dropped.
 interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect {
     readonly resourceId: Id<Resource>;
+}
+
+interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollect {
+    readonly sourceCreepId: Id<Creep>;
+    sourceDistance: number;
+    relayTo?: Id<Creep>;
 }
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
@@ -61,12 +71,13 @@ export type CollectorCreepState
     | CollectorCreepStateCollectSource
     | CollectorCreepStateCollectTombstone
     | CollectorCreepStateCollectResource
+    | CollectorCreepStateCollectCreepRelay
     | CollectorCreepStateDistributeSpawn
     | CollectorCreepStateDistributeExtension
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
 
-type CollectorDestId = Id<Tombstone> | Id<Resource> | Id<Source> | Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite> | Id<StructureExtension>;
+type CollectorDestId = Id<RoomObject>;
 
 let occupiedDests: Map<CollectorDestId, Set<Id<Creep>>> | undefined;
 const emptySet: ReadonlySet<any> = {
@@ -178,7 +189,18 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 // Allow queuing up
                 && !reachedMaxPeers(t.id, 10)
         });
-        const goals = [...resources, ...tombstones, ...sources];
+        // We allow stealing energy from existing collecting creeps.
+        const collectingCreeps = enumSpecializedCreeps(CollectorCreep, room)
+            .filter(c => c.state.mode === "collect"
+                && ("sourceId" in c.state || "sourceCreepId" in c.state && c.state.sourceDistance < 2)
+                && (c.state.relayTo || this.id) === this.id)
+            .map(c => c.creep);
+        const goals = [
+            ...resources,
+            ...tombstones,
+            ...sources,
+            ...collectingCreeps
+        ];
         const nearest = findNearestPath(creep.pos, goals, {
             maxRooms: 1, roomCallback: roomName => {
                 const room = Game.rooms[roomName];
@@ -197,21 +219,35 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const destId = nearest.goal.id;
         const nextEvalTime = Game.time + _.random(4, 10);
         this.logger.info(`Collect ${nearest.goal}.`);
-        if (nearest.goal instanceof Resource) {
+        if (nearest.goal instanceof Resource)
             this.state = { mode: "collect", resourceId: nearest.goal.id, destId, nextEvalTime };
-        }
-        else if (nearest.goal instanceof Tombstone) {
+        else if (nearest.goal instanceof Tombstone)
             this.state = { mode: "collect", tombstoneId: nearest.goal.id, destId, nextEvalTime };
-        }
-        else if (nearest.goal instanceof Source) {
-            this.state = { mode: "collect", sourceId: nearest.goal.id, destId, nextEvalTime };
+        else if (nearest.goal instanceof Source)
+            this.state = { mode: "collect", sourceId: nearest.goal.id, destId, sourceDistance: 0, nextEvalTime };
+        else if (nearest.goal instanceof Creep) {
+            const sourceCollector = getSpecializedCreep(nearest.goal, CollectorCreep);
+            if (!sourceCollector) throw new Error("Unexpected null sourceCollector.");
+            const sourceState = sourceCollector.state;
+            if (sourceState.mode === "collect" && ("sourceId" in sourceState || "sourceCreepId" in sourceState)) {
+                this.state = {
+                    mode: "collect",
+                    sourceCreepId: nearest.goal.id,
+                    destId,
+                    sourceDistance: sourceState.sourceDistance + 1,
+                    nextEvalTime
+                };
+                sourceState.relayTo = this.id;
+            } else {
+                throw new Error("Unexpected sourceCollector state.");
+            }
         } else
             throw new Error("Unexpected code path.");
         this.pathCache = { targetId: destId, targetPath: nearest.path };
         return true;
     }
-    private transitIdle(): boolean {
-        this.state = { mode: "idle", nextEvalTime: Game.time + _.random(5) };
+    private transitIdle(nextEvalTimeOffset?: number): boolean {
+        this.state = { mode: "idle", nextEvalTime: nextEvalTimeOffset ?? (Game.time + _.random(5)) };
         return true;
     }
     private transitDistribute(): boolean {
@@ -393,6 +429,18 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const tombstone = dest = Game.getObjectById(state.tombstoneId);
             result = tombstone ? creep.withdraw(tombstone, RESOURCE_ENERGY) : undefined;
             this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
+        } else if ("sourceCreepId" in state) {
+            const sc = dest = Game.getObjectById(state.sourceCreepId);
+            const scollector = sc && getSpecializedCreep(sc, CollectorCreep);
+            const scstate = scollector?.state;
+            if (scstate && scstate.mode == "collect" && "relayTo" in scstate && scstate.relayTo === this.id && state.sourceDistance != null) {
+                result = sc ? sc.transfer(creep, RESOURCE_ENERGY) : undefined;
+                this.logger.trace(`nextFrameCollect: sourceCreep.transfer(creep) -> ${result}.`);
+            } else {
+                // In case peer changed source.
+                result = undefined;
+                this.logger.trace(`nextFrameCollect: sourceCreep ${sc} changed source: mode=${scstate?.mode}.`);
+            }
         } else {
             const source = dest = Game.getObjectById(state.sourceId);
             result = source ? creep.harvest(source) : undefined;

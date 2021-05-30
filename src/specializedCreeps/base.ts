@@ -30,8 +30,8 @@ export function isSpecializedCreepOf(creep: Creep, type: SpecializedCreepType): 
     return creep.memory?.rustyType === type.rustyType;
 }
 
-export function enumSpecializedCreeps<T extends SpecializedCreepType>(type?: T): Iterable<InstanceType<T>> {
-    let result = _(Game.creeps).values();
+export function enumSpecializedCreeps<T extends SpecializedCreepType>(type?: T, room?: Room): _.Collection<InstanceType<T>> {
+    let result = room ? _(room.find(FIND_MY_CREEPS)) : _(Game.creeps).values();
     if (type)
         return result
             .map(c => (isSpecializedCreepOf(c, type) && getSpecializedCreep(c)) as InstanceType<T>)
@@ -50,7 +50,7 @@ export abstract class SpecializedCreepBase<TState extends Record<string, any> = 
         if (!id) throw new TypeError("Creep id is falsy.");
         void (this.creep);
     }
-    public get creep(): Creep{
+    public get creep(): Creep {
         const inst = Game.getObjectById(this.id);
         if (!(inst instanceof Creep)) throw new Error(`Unexpected underlying Creep instance: ${inst}.`);
         return inst;

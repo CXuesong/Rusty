@@ -17,7 +17,7 @@ function getNewSpecializedCreepInst(creep: Creep | Id<Creep>): SpecializedCreepB
     return new creepType(creep.id);
 }
 
-export function getSpecializedCreep(creep: Creep | Id<Creep>): SpecializedCreepBase | undefined {
+export function getSpecializedCreep<T extends SpecializedCreepType>(creep: Creep | Id<Creep>, expectedType?: T): InstanceType<T> | undefined {
     const id = creep instanceof Creep ? creep.id : creep;
     // Spawnning screep does not own ID.
     if (!id) return undefined;
@@ -26,7 +26,9 @@ export function getSpecializedCreep(creep: Creep | Id<Creep>): SpecializedCreepB
         c = getNewSpecializedCreepInst(creep);
         if (c) creepCache.set(id, c);
     }
-    return c;
+    if (c && expectedType && !(c instanceof expectedType))
+        throw new TypeError(`Expect creep ${creep} to be of ${expectedType.rustyType}. Actual: ${c}.`);
+    return c as InstanceType<T>;
 }
 
 export function houseKeeping() {
