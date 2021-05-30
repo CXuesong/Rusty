@@ -130,6 +130,24 @@ const emptySet: ReadonlySet<any> = {
     [Symbol.iterator]: function* () { },
 }
 
+export function houseKeeping(logger: Logger) {
+    if (occupiedDests) {
+        let count = 0;
+        for (const [destId, collectors] of occupiedDests) {
+            if (!Game.getObjectById(destId)) {
+                occupiedDests.delete(destId);
+                continue;
+            }
+            for (const collector of collectors) {
+                if (!(Game.getObjectById(collector) instanceof Creep)) {
+                    collectors.delete(collector);
+                }
+            }
+        }
+        logger.info(`Removed ${count} dangling collector in occupiedDests cache.`);
+    }
+}
+
 function getTargetingCollectors(id: CollectorDestId): ReadonlySet<Id<Creep>> {
     if (!occupiedDests) {
         occupiedDests = new Map();
@@ -195,6 +213,10 @@ function estimateDecayedResourceAmount(currentPos: RoomPosition, target: Resourc
     return Math.floor(target.amount * Math.pow(1 - 1 / ENERGY_DECAY, target.pos.getRangeTo(currentPos) * 1.6));
 }
 
+export const __internal__debugInfo = {
+    occupiedDests
+};
+
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
@@ -215,7 +237,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         return name;
     }
-    public nextFrame(): void {
+    protected onNextFrame(): void {
         const { state } = this;
         switch (state.mode) {
             case "idle":
@@ -245,6 +267,14 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 addTargetingCollector(newState.destId, this.id);
         }
         return newState;
+    }
+    public dispose() {
+        const { state } = this;
+        if (this.disposed) return;
+        if (state.mode === "collect" && "destId" in state) {
+            removeTargetingCollector(state.destId, this.id);
+        }
+        super.dispose();
     }
     private transitCollect(): boolean {
         const { creep } = this;
@@ -587,8 +617,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const scollector = sc && getSpecializedCreep(sc, CollectorCreep);
             const scstate = scollector?.state;
             if (scstate?.mode == "collect" && "sourceDistance" in scstate && scstate.sourceDistance < state.sourceDistance) {
-                result = sc ? sc.transfer(creep, RESOURCE_ENERGY) : undefined;
-                this.logger.trace(`nextFrameCollect: sourceCreep.transfer(creep) -> ${result}.`);
+                if (!sc) {
+                    result = undefined;
+                } else if (sc.store.energy >= 5) {
+                    result = sc ? sc.transfer(creep, RESOURCE_ENERGY) : undefined;
+                    this.logger.trace(`nextFrameCollect: ${sc}.transfer(creep) -> ${result}.`);
+                } else {
+                    this.logger.info(`nextFrameCollect: sourceCreep ${sc} energy is exhausted.`);
+                    if (!this.transitCollect())
+                        this.transitIdle();
+                    return
+                }
             } else {
                 // In case peer changed source.
                 result = undefined;

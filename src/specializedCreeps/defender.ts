@@ -27,7 +27,7 @@ export class DefenderCreep extends SpecializedCreepBase<DefenderCreepState> {
         super(id);
         this.myAttackPower = evaluateAttackPower(this.creep);
     }
-    public nextFrame(): void {
+    protected onNextFrame(): void {
         const { creep, state } = this;
         let spawn = state.spawnId && Game.getObjectById(state.spawnId);
         if (!spawn) {

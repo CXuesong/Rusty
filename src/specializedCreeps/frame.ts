@@ -1,10 +1,10 @@
 import _ from "lodash";
 import { Logger } from "src/utility/logger";
-import { CollectorCreep } from "./collector";
+import { CollectorCreep, houseKeeping as collectorHouseKeeping } from "./collector";
 import { DefenderCreep } from "./defender";
 import { getSpecializedCreep, houseKeeping as registryHouseKeeping, knownCreepTypes } from "./registry";
 
-const logger = new Logger("Rusty.SpecializedCreeps");
+const logger = new Logger("Rusty.SpecializedCreeps.Frame");
 
 knownCreepTypes.push(
     CollectorCreep,
@@ -12,15 +12,17 @@ knownCreepTypes.push(
 );
 
 function houseKeeping() {
-    const deleted: string[] = [];
-    for (const k of Object.keys(Memory.creeps)) {
-        if (!(k in Game.creeps)) {
-            deleted.push(k);
-            delete Memory.creeps[k];
-        }
-    }
-    if (deleted.length)
-        logger.info(`houseKeeping: deleted ${deleted.length} creep memory: ${deleted}.`);
+    // Delete leaked creep memory.
+    // Not necessary: Game has already done that for us.
+    // const deleted: string[] = [];
+    // for (const k of Object.keys(Memory.creeps)) {
+    //     if (!(k in Game.creeps)) {
+    //         deleted.push(k);
+    //         delete Memory.creeps[k];
+    //     }
+    // }
+    // if (deleted.length)
+    //     logger.info(`houseKeeping: deleted ${deleted.length} creep memory: ${deleted}.`);
 }
 
 let nextHouseKeepingTime = 0;
@@ -32,7 +34,7 @@ export function onNextFrame() {
             const sc = getSpecializedCreep(creep);
             if (!sc) continue;
             const { ticksToLive } = creep;
-            if (ticksToLive != null && ticksToLive <= 1) {
+            if (ticksToLive != null && ticksToLive <= 3) {
                 sc.dispose();
             } else {
                 sc.nextFrame();
@@ -43,10 +45,11 @@ export function onNextFrame() {
     }
     // Housekeeping
     if (Game.time >= nextHouseKeepingTime) {
-        nextHouseKeepingTime = Game.time + _.random(50, 150);
+        nextHouseKeepingTime = Game.time + _.random(5);
         logger.info(`Housekeeping. Next housekeeping time: ${nextHouseKeepingTime}.`);
         // Order is important to ensure proper disposal.
-        registryHouseKeeping();
+        registryHouseKeeping(logger);
+        collectorHouseKeeping(logger);
         houseKeeping();
     }
 }

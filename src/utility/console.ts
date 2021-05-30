@@ -1,5 +1,5 @@
 import _ from "lodash";
-import { CollectorCreep, CollectorCreepState, structureNeedsRepair } from "src/specializedCreeps/collector";
+import { CollectorCreep, CollectorCreepState, structureNeedsRepair, __internal__debugInfo } from "src/specializedCreeps/collector";
 import { DefenderCreep, DefenderCreepState } from "src/specializedCreeps/defender";
 import { __internal__getSpecializedCreepsCache } from "src/specializedCreeps/registry";
 import { initializeCreepMemory } from "src/specializedCreeps/spawn";
@@ -43,6 +43,10 @@ export class ConsoleUtils {
 
     public static get specializedCreepsCache(): unknown {
         return __internal__getSpecializedCreepsCache();
+    }
+
+    public static get collectorDestCache(): unknown {
+        return __internal__debugInfo.occupiedDests;
     }
 
     public static showStructureRepairStatus(room?: Room | string): Record<string, number> {

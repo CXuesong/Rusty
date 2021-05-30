@@ -43,13 +43,16 @@ export function getSpecializedCreep<T extends SpecializedCreepType>(creep: Creep
     return c as InstanceType<T>;
 }
 
-export function houseKeeping() {
+export function houseKeeping(logger: Logger) {
+    let count = 0;
     for (const [k, v] of creepCache.entries()) {
         if (!(Game.getObjectById(k) instanceof Creep)) {
+            count++;
             v.dispose();
             creepCache.delete(k);
         }
     }
+    logger.info(`Rusty.SpecializedCreeps.Registry.housekeeping: Disposed ${count} dangling SpecializedCreep instance.`);
 }
 
 export function __internal__getSpecializedCreepsCache(): unknown {
