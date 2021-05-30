@@ -1,5 +1,5 @@
 import _ from "lodash";
-import { CollectorCreep, CollectorCreepState } from "src/specializedCreeps/collector";
+import { CollectorCreep, CollectorCreepState, structureNeedsRepair } from "src/specializedCreeps/collector";
 import { DefenderCreep, DefenderCreepState } from "src/specializedCreeps/defender";
 import { __internal__getSpecializedCreepsCache } from "src/specializedCreeps/registry";
 import { initializeCreepMemory } from "src/specializedCreeps/spawn";
@@ -10,6 +10,15 @@ const logger = new Logger("Rusty.Utility.Console");
 export class ConsoleUtils {
     private constructor() {
     }
+
+    public static dir(this: Record<string, unknown>) {
+        console.log("Available members:\n" +
+            _(Object.getOwnPropertyNames(ConsoleUtils))
+                .difference(["prototype", "length", "name"])
+                .map(k => `${k}: ${typeof (ConsoleUtils as unknown as Record<string, unknown>)[k]}`).join("\n"));
+    }
+
+    public static help = ConsoleUtils.dir;
 
     public static rebuildSpecializedCreepsMemory(): void {
         const rebuiltNames: string[] = [];
@@ -36,12 +45,20 @@ export class ConsoleUtils {
         return __internal__getSpecializedCreepsCache();
     }
 
-    public static dir(this: Record<string, unknown>) {
-        console.log("Available members:\n" +
-            _(Object.getOwnPropertyNames(ConsoleUtils))
-                .difference(["prototype", "length", "name"])
-                .map(k => `${k}: ${typeof (ConsoleUtils as unknown as Record<string, unknown>)[k]}`).join("\n"));
+    public static showStructureRepairStatus(room?: Room): Record<string, number> {
+        const structures = room ? _(room.find(FIND_MY_STRUCTURES) as Structure[]) : _(Game.structures).values();
+        const structureStatus = structures
+            .map(s => [s, structureNeedsRepair(s) || ""] as const)
+            .groupBy(([s, r]) => r)
+            .mapValues(entries => entries.map(([s, r]) => s))
+            .value();
+        for (const [status, structures] of _(structureStatus).entries()) {
+            if (!status) continue;
+            for (const s of structures)
+                s.room.visual.text(status.substr(0, 2).toUpperCase(), s.pos, { opacity: 0.6 });
+        }
+        const result = _(structureStatus).mapValues(v => v.length).value();
+        console.log(JSON.stringify(result));
+        return result;
     }
-
-    public static help = ConsoleUtils.dir;
 }

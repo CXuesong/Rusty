@@ -6,7 +6,7 @@ loggerLevels.push(
     ["Rusty.loop", LogLevel.info],
     ["Rusty.Utility.Console", LogLevel.trace],
     ["Rusty.Utility.Combat", LogLevel.info],
-    // ["Rusty.SpecializedCreeps.CollectorCreep.#Puddlestream", LogLevel.trace],
+    ["Rusty.SpecializedCreeps.CollectorCreep.#Smallpaw", LogLevel.trace],
 );
 
 import * as RustyRoom from "./room";
@@ -16,7 +16,7 @@ import { ConsoleUtils } from "./utility/console";
 
 let runtimeTicks = 0;
 let runtimeCpuTimeTotal = 0;
-(global as unknown as Record<string, unknown>)["ConsoleUtils"] = ConsoleUtils;
+(global as unknown as Record<string, unknown>)["RustyUtils"] = ConsoleUtils;
 
 export function loop() {
     const logger = new Logger("Rusty.loop");
