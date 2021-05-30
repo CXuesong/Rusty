@@ -10,6 +10,7 @@ interface RustyRoomMemory {
 }
 
 const logger = new Logger("Rusty.Room");
+const populationIndicatorText = new Map<string, string>();
 
 export function onRoomNextFrame(room: Room): void {
     if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
@@ -37,17 +38,21 @@ export function onRoomNextFrame(room: Room): void {
             // Do not need to spawn defender under safe mode.
             if (collectors >= 1 && (!controller?.safeMode || controller.safeMode < 1500)) {
                 if (defenders < 1) {
-                    trySpawn(spawns, s => DefenderCreep.spawn(s));
-                    return;
+                    // Note: if you spawn twice, only the last spawn will be kept.
+                    spawns.remove(trySpawn(spawns, s => DefenderCreep.spawn(s)));
                 } else {
                     const hostileCreeps = room.find(FIND_HOSTILE_CREEPS).length;
                     if (hostileCreeps > 0 && defenders < hostileCreeps + 1) {
-                        trySpawn(spawns, s => DefenderCreep.spawn(s));
-                        return;
+                        spawns.remove(trySpawn(spawns, s => DefenderCreep.spawn(s)));
                     }
                 }
             }
-            const expectedCollectors = [2, spawns.length * 3 + sources.length * 8 + 4];
+            const expectedCollectors = [2,
+                spawns.length * 3
+                + sources.length * 8
+                + (controller?.my ? 6 : 0)
+                + 4
+            ];
             if (controller?.my) {
                 const progressRemaining = controller.progressTotal - controller.progress;
                 if (progressRemaining < 1000)
@@ -57,12 +62,22 @@ export function onRoomNextFrame(room: Room): void {
                 else
                     expectedCollectors.push(25);
             }
-            const expc = Math.max(...expectedCollectors)
-            room.visual.text(`Collectors: ${collectors}/[${expectedCollectors}].`, 0, 0, { align: "left" });
+            const expc = Math.max(...expectedCollectors);
             if (collectors < expc) {
                 // Spawn collectors if necessary.
-                trySpawn(spawns, s => CollectorCreep.spawn(s));
+                spawns.remove(trySpawn(spawns, s => CollectorCreep.spawn(s)));
             }
+
+            // Update room indicator
+            const decayingCreeps = _(creeps).sortBy(c => c.ticksToLive)
+                .take(5).map(c => `  ${c.name}\t${c.ticksToLive}tks`)
+                .join("\n");
+            populationIndicatorText.set(room.name, `
+Defenders: ${defenders}
+Collectors: ${collectors}/[${expectedCollectors}].
+Decaying creeps
+${decayingCreeps}
+`.trim());
         }
     }
 }
@@ -71,6 +86,12 @@ export function onNextFrame(): void {
     for (const room of _(Game.rooms).values()) {
         try {
             onRoomNextFrame(room);
+            const populationIndicator = populationIndicatorText.get(room.name);
+            if (populationIndicator) {
+                populationIndicator.split("\n").forEach((l, i) =>
+                    room.visual.text(l, 1, 1 + i, { align: "left", opacity: 0.4 })
+                );
+            }
         } catch (err) {
             logger.error(`onNextFrame failed in ${room}.`, err);
         }

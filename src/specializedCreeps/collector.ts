@@ -44,29 +44,39 @@ interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollec
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
     mode: "distribute";
-    destId: Id<StructureSpawn | StructureController | ConstructionSite | StructureExtension | StructureTower>;
+    destId: Id<unknown>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
 interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateDistribute {
     spawnId: Id<StructureSpawn>;
+    destId: Id<StructureSpawn>;
 }
 
 interface CollectorCreepStateDistributeTower extends CollectorCreepStateDistribute {
     towerId: Id<StructureTower>;
+    destId: Id<StructureTower>;
 }
 
 interface CollectorCreepStateDistributeExtension extends CollectorCreepStateDistribute {
     extensionId: Id<StructureExtension>;
+    destId: Id<StructureExtension>;
+}
+
+interface CollectorCreepStateDistributeRampart extends CollectorCreepStateDistribute {
+    rampartId: Id<StructureRampart>;
+    destId: Id<StructureRampart>;
 }
 
 interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
     controllerId: Id<StructureController>;
+    destId: Id<StructureController>;
 }
 
 interface CollectorCreepStateDistributeConstruction extends CollectorCreepStateDistribute {
     constructionSiteId: Id<ConstructionSite>;
+    destId: Id<ConstructionSite>;
 }
 
 export type CollectorCreepState
@@ -78,6 +88,7 @@ export type CollectorCreepState
     | CollectorCreepStateDistributeSpawn
     | CollectorCreepStateDistributeTower
     | CollectorCreepStateDistributeExtension
+    | CollectorCreepStateDistributeRampart
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
 
@@ -123,6 +134,14 @@ function removeTargetingCollector(id: CollectorDestId, collector: Id<Creep>): vo
     if (!set) return;
     set.delete(collector);
     if (!set.size) occupiedDests.delete(id);
+}
+
+function structureNeedsRepair(structure: Structure): "yes" | "now" | false {
+    if (!structure.hitsMax) return false;
+    if (structure.hitsMax - structure.hits < 500 && structure.hits / structure.hitsMax > 0.8) return false;
+    // 2000 -- needs 20 ticks to repair.
+    return structure.hitsMax - structure.hits > 2000 || structure.hits / structure.hitsMax < 0.5
+        ? "now" : "yes";
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -301,33 +320,32 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     reEvaluatePath(c);
                     return true;
                 }
-            } else if ("spawnId" in state) {
-                const s = Game.getObjectById(state.spawnId);
-                if (s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 10) {
-                    reEvaluatePath(s);
-                    return true;
-                }
             } else if ("constructionSiteId" in state) {
                 const s = Game.getObjectById(state.constructionSiteId);
                 if (s && s.progress < s.progressTotal) {
                     reEvaluatePath(s);
                     return true;
                 }
-            } else if ("extensionId" in state || "towerId" in state) {
-                const ext = Game.getObjectById(state.destId as Id<StructureExtension | StructureTower>);
-                if (ext && ext.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
-                    reEvaluatePath(ext);
+            } else if ("spawnId" in state || "extensionId" in state || "towerId" in state) {
+                const st = Game.getObjectById(state.destId as Id<StructureExtension | StructureTower>);
+                const minFreeCap = st instanceof StructureSpawn ? 10 : 0;
+                if (st && (st.store.getFreeCapacity(RESOURCE_ENERGY) > minFreeCap || structureNeedsRepair(st))) {
+                    reEvaluatePath(st);
                     return true;
                 }
             }
         }
-        const structuresNeedingEnergy = room.find(FIND_MY_STRUCTURES, {
+        const structures = room.find(FIND_MY_STRUCTURES, {
             filter: s => (
-                s.structureType === STRUCTURE_EXTENSION
-                || s.structureType === STRUCTURE_TOWER
-            ) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 && !reachedMaxPeers(s.id, 4)
+                (s.structureType === STRUCTURE_EXTENSION
+                    || s.structureType === STRUCTURE_TOWER
+                    || s.structureType === STRUCTURE_RAMPART
+                )
+                && (structureNeedsRepair(s) === "now" || "store" in s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
+                && !reachedMaxPeers(s.id, 4)
+            )
         }) as Array<StructureExtension | StructureTower>;
-        const towers = structuresNeedingEnergy.filter((s): s is StructureTower => s instanceof StructureTower);
+        const towers = structures.filter((s): s is StructureTower => s instanceof StructureTower);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
         const { controller } = room;
         let controllerPriority: number;
@@ -355,7 +373,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             } else {
                 goals = [
                     ...constructionSites,
-                    ...structuresNeedingEnergy,
+                    ...structures,
                     ...spawns
                 ];
             }
@@ -364,7 +382,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.logger.warning(`transitDistribute: findNearestPath(${goals}) -> undefined.`);
                 return false;
             }
-            const destId = nearest.goal.id;
+            const destId = nearest.goal.id as Id<any>;
             this.logger.info(`Distribute ${nearest.goal}.`);
             if (nearest.goal instanceof StructureSpawn) {
                 this.state = { mode: "distribute", spawnId: nearest.goal.id, destId, nextEvalTime };
@@ -497,18 +515,26 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if (state.mode !== "distribute") throw new Error("Invalid state.");
         let result;
         let dest;
-        if ("spawnId" in state) {
-            const spawn = dest = Game.getObjectById(state.spawnId);
-            result = spawn ? creep.transfer(spawn, RESOURCE_ENERGY) : undefined;
-            this.logger.trace(`nextFrameDistribute: creep.transfer -> ${result}.`);
-        } else if ("constructionSiteId" in state) {
+        if ("constructionSiteId" in state) {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
-        } else if ("extensionId" in state || "towerId" in state) {
-            const extension = dest = Game.getObjectById(state.destId as Id<StructureExtension | StructureTower>);
-            result = extension ? creep.transfer(extension, RESOURCE_ENERGY) : undefined;
-            this.logger.trace(`nextFrameDistribute: creep.transfer -> ${result}.`);
+        } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state) {
+            const st = dest = Game.getObjectById(state.destId as Id<StructureSpawn | StructureExtension | StructureTower | StructureRampart>);
+            if (!st) {
+                result = undefined
+            } else {
+                const needsRepair = st && structureNeedsRepair(st);
+                const freeCap = "store" in st ? st.store.getFreeCapacity(RESOURCE_ENERGY) : 0;
+                if (needsRepair === "now" || needsRepair && !freeCap) {
+                    // Fix construct, if it needs fixing or we have more energy.
+                    result = creep.repair(st);
+                    this.logger.trace(`nextFrameDistribute: creep.repair(${st}) -> ${result}.`);
+                } else {
+                    result = creep.transfer(st, RESOURCE_ENERGY);
+                    this.logger.trace(`nextFrameDistribute: creep.transfer -> ${result}.`);
+                }
+            }
         } else {
             const controller = dest = Game.getObjectById(state.controllerId);
             result = controller ? creep.upgradeController(controller) : undefined;

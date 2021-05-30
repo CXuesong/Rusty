@@ -1,5 +1,5 @@
 /// <reference path="./typings.d.ts" />
-
+import "./utility/polyfill";
 import { Logger, loggerLevels, LogLevel } from "./utility/logger";
 loggerLevels.push(
     ["Rusty", LogLevel.warning],
