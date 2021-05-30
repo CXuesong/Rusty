@@ -25,6 +25,7 @@ type CollectorCreepDistributeDestType
     | StructureExtension
     | StructureTower
     | StructureRampart
+    | StructureRoad
     | StructureWall;
 
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
@@ -85,6 +86,11 @@ interface CollectorCreepStateDistributeWall extends CollectorCreepStateDistribut
     destId: Id<StructureWall>;
 }
 
+interface CollectorCreepStateDistributeRoad extends CollectorCreepStateDistribute {
+    roadId: Id<StructureRoad>;
+    destId: Id<StructureRoad>;
+}
+
 interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
     controllerId: Id<StructureController>;
     destId: Id<StructureController>;
@@ -106,6 +112,7 @@ export type CollectorCreepState
     | CollectorCreepStateDistributeExtension
     | CollectorCreepStateDistributeRampart
     | CollectorCreepStateDistributeWall
+    | CollectorCreepStateDistributeRoad
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
 
@@ -155,21 +162,28 @@ function removeTargetingCollector(id: CollectorDestId, collector: Id<Creep>): vo
 }
 
 export function structureNeedsRepair(structure: Structure): "now" | "yes" | "later" | false {
-    if (!structure.hitsMax) return false;
+    if (!structure.hitsMax || structure.hits >= structure.hitsMax) return false;
     if (structure instanceof StructureRampart) {
         if (structure.hits < 1000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "now";
         if (structure.hits < 2000 + 7200 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "yes";
         // Rampart has relatively high hitsMax
-        return structure.hits < structure.hitsMax ? "later" : false;
+        return "later";
     }
     if (structure instanceof StructureWall) {
         if (structure.hits < 10000)
             return "now";
         if (structure.hits < 20000)
             return "yes";
-        return structure.hits < structure.hitsMax ? "later" : false;
+        return "later";
+    }
+    if (structure instanceof StructureRoad) {
+        if (structure.hits < 2000 || structure.hits / structure.hitsMax < 0.2)
+            return "now";
+        if (structure.hits / structure.hitsMax < 0.8)
+            return "yes";
+        return "later";
     }
     if (structure.hitsMax - structure.hits < 1000 && structure.hits / structure.hitsMax > 0.5) return false;
     // 2000 -- needs 20 ticks to repair.
@@ -351,6 +365,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             return costs;
         };
         if (state.mode === "distribute") {
+            // Keep incremental state update if current is already in distribute state.
             const reEvaluatePath = (target: StructureController | ConstructionSite | TTargetStructre) => {
                 this.pathCache = {
                     targetId: target.id,
@@ -385,6 +400,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             filter: s => s.structureType === STRUCTURE_EXTENSION && s.my
                 || s.structureType === STRUCTURE_TOWER && s.my
                 || s.structureType === STRUCTURE_RAMPART && s.my
+                || s.structureType === STRUCTURE_ROAD
                 || s.structureType === STRUCTURE_WALL
         }))
             .map(s => {
@@ -474,6 +490,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.state = { mode: "distribute", rampartId: nearest.goal.id, destId, nextEvalTime };
             } else if (nearest.goal instanceof StructureWall) {
                 this.state = { mode: "distribute", wallId: nearest.goal.id, destId, nextEvalTime };
+            } else if (nearest.goal instanceof StructureRoad) {
+                this.state = { mode: "distribute", roadId: nearest.goal.id, destId, nextEvalTime };
             } else
                 throw new Error("Unexpected code path.");
             this.pathCache = { targetId: destId, targetPath: nearest.path };
@@ -626,7 +644,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
-        } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state || "wallId" in state) {
+        } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state || "wallId" in state || "roadId" in state) {
             const st = dest = Game.getObjectById(state.destId as Id<StructureSpawn | StructureExtension | StructureTower | StructureRampart>);
             if (!st) {
                 result = undefined
