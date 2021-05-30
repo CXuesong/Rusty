@@ -45,13 +45,17 @@ interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollec
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
     mode: "distribute";
-    destId: Id<StructureSpawn> | Id<StructureController> | Id<ConstructionSite> | Id<StructureExtension>;
+    destId: Id<StructureSpawn | StructureController | ConstructionSite | StructureExtension | StructureTower>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
 interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateDistribute {
     spawnId: Id<StructureSpawn>;
+}
+
+interface CollectorCreepStateDistributeTower extends CollectorCreepStateDistribute {
+    towerId: Id<StructureTower>;
 }
 
 interface CollectorCreepStateDistributeExtension extends CollectorCreepStateDistribute {
@@ -73,6 +77,7 @@ export type CollectorCreepState
     | CollectorCreepStateCollectResource
     | CollectorCreepStateCollectCreepRelay
     | CollectorCreepStateDistributeSpawn
+    | CollectorCreepStateDistributeTower
     | CollectorCreepStateDistributeExtension
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
@@ -271,7 +276,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             return costs;
         };
         if (state.mode === "distribute") {
-            const reEvaluatePath = (target: StructureController | StructureSpawn | ConstructionSite | StructureExtension) => {
+            const reEvaluatePath = (target: StructureController | StructureSpawn | ConstructionSite | StructureExtension | StructureTower) => {
                 this.pathCache = {
                     targetId: target.id,
                     targetPath: creep.pos.findPathTo(target.pos, {
@@ -298,14 +303,21 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     reEvaluatePath(s);
                     return true;
                 }
-            } else if ("extensionId" in state) {
-                const ext = Game.getObjectById(state.extensionId);
+            } else if ("extensionId" in state || "towerId" in state) {
+                const ext = Game.getObjectById(state.destId as Id<StructureExtension | StructureTower>);
                 if (ext && ext.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                     reEvaluatePath(ext);
                     return true;
                 }
             }
         }
+        const structuresNeedingEnergy = room.find(FIND_MY_STRUCTURES, {
+            filter: s => (
+                s.structureType === STRUCTURE_EXTENSION
+                || s.structureType === STRUCTURE_TOWER
+            ) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 && !reachedMaxPeers(s.id, 4)
+        }) as Array<StructureExtension | StructureTower>;
+        const towers = structuresNeedingEnergy.filter((s): s is StructureTower => s instanceof StructureTower);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
         const { controller } = room;
         let controllerPriority: number;
@@ -313,7 +325,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 1500 && !reachedMaxPeers(controller.id, 4)) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
-            } else if (constructionSites.length > 2) {
+            } else if (towers.length || constructionSites.length > 2) {
                 controllerPriority = 0
             } else if (!reachedMaxPeers(controller.id, 6)) {
                 controllerPriority = 0.05;
@@ -326,10 +338,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const nextEvalTime = Game.time + _.random(4, 10);
         if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {
             const spawns = room.find(FIND_MY_SPAWNS, { filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
-            const extensions = room.find(FIND_MY_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            }) as StructureExtension[];
-            const goals = [...constructionSites, ...extensions, ...spawns];
+            let goals;
+            if (towers.length && _(towers).map(t => creep.pos.getRangeTo(t.pos)).min()! < 20) {
+                // Feeding tower is priority.
+                goals = [...towers];
+            } else {
+                goals = [
+                    ...constructionSites,
+                    ...structuresNeedingEnergy,
+                    ...spawns
+                ];
+            }
             const nearest = findNearestPath(creep.pos, goals, { maxRooms: 1, roomCallback: roomCallback });
             if (!nearest) {
                 this.logger.warning(`transitDistribute: findNearestPath(${goals}) -> undefined.`);
@@ -344,6 +363,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
             } else if (nearest.goal instanceof StructureExtension) {
                 this.state = { mode: "distribute", extensionId: nearest.goal.id, destId, nextEvalTime };
+            } else if (nearest.goal instanceof StructureTower) {
+                this.state = { mode: "distribute", towerId: nearest.goal.id, destId, nextEvalTime };
             } else
                 throw new Error("Unexpected code path.");
             this.pathCache = { targetId: destId, targetPath: nearest.path };
@@ -384,27 +405,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 throw new Error("Invalid state.");
         }
     }
-    // private tryTransferEnergy(): boolean {
-    //     const { creep } = this;
-    //     const myEnergy = creep.store.getUsedCapacity(RESOURCE_ENERGY);
-    //     if (!myEnergy) return false;
-    //     const targets = creep.pos.findInRange(FIND_MY_CREEPS, 1, { filter: c => c.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
-    //     const target = _(targets)
-    //         .map(c => getSpecializedCreep(c))
-    //         .filter(c => !!c)
-    //         .minBy(c => {
-    //             // Only transfer energy to walking creeps.
-    //             if (c instanceof CollectorCreep && c.state.isWalking)
-    //                 return c.creep.store.getFreeCapacity(RESOURCE_ENERGY);
-    //             return undefined;
-    //         });
-    //     if (target) {
-    //         const result = creep.transfer(target.creep, RESOURCE_ENERGY);
-    //         this.logger.info(`tryTransferEnergy: creep.transfer(${target.creep}) -> ${result}.`);
-    //         return result === OK;
-    //     }
-    //     return false;
-    // }
     private nextFrameIdle(): void {
         const { creep, state } = this;
         if (state.mode !== "idle") throw new Error("Invalid state.");
@@ -492,8 +492,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
-        } else if ("extensionId" in state) {
-            const extension = dest = Game.getObjectById(state.extensionId);
+        } else if ("extensionId" in state || "towerId" in state) {
+            const extension = dest = Game.getObjectById(state.destId as Id<StructureExtension | StructureTower>);
             result = extension ? creep.transfer(extension, RESOURCE_ENERGY) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.transfer -> ${result}.`);
         } else {
