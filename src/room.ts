@@ -50,7 +50,7 @@ export function onRoomNextFrame(room: Room): void {
             const expectedCollectors = [2,
                 spawns.length * 3
                 + sources.length * 8
-                + (controller?.my ? 6 : 0)
+                + (controller?.my ? 8 : 0)
                 + 4
             ];
             if (controller?.my) {

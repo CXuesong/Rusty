@@ -138,9 +138,16 @@ function removeTargetingCollector(id: CollectorDestId, collector: Id<Creep>): vo
 
 function structureNeedsRepair(structure: Structure): "yes" | "now" | false {
     if (!structure.hitsMax) return false;
-    if (structure.hitsMax - structure.hits < 500 && structure.hits / structure.hitsMax > 0.8) return false;
+    if (structure instanceof StructureRampart) {
+        if (structure.hits < 1000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
+            return "now";
+        if (structure.hits < 2000 + 7200 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
+            return "yes";
+        return false;
+    }
+    if (structure.hitsMax - structure.hits < 1000 && structure.hits / structure.hitsMax > 0.5) return false;
     // 2000 -- needs 20 ticks to repair.
-    return structure.hitsMax - structure.hits > 2000 || structure.hits / structure.hitsMax < 0.5
+    return structure.hits < 2000 || structure.hits / structure.hitsMax < 0.1
         ? "now" : "yes";
 }
 
@@ -361,6 +368,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             } else if (towers.length || constructionSites.length > 2) {
                 controllerPriority = 0
             } else if (!reachedMaxPeers(controller.id, 6)) {
+                controllerPriority = 0.2;
+            } else if (!reachedMaxPeers(controller.id, 10)) {
                 controllerPriority = 0.05;
             } else {
                 controllerPriority = 0;
@@ -548,7 +557,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             this.logger.trace(`nextFrameDistribute: creep.upgradeController -> ${result}.`);
         }
         state.isWalking = result === ERR_NOT_IN_RANGE;
-        if (result == null || result === ERR_NOT_IN_RANGE) {
+        if (result == null || result === ERR_NOT_IN_RANGE || result == ERR_INVALID_TARGET) {
             if (
                 // Dest is gone.
                 !dest

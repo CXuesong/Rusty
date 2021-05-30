@@ -1,17 +1,14 @@
 import _ from "lodash";
 
-const blockerStructureTypes = new Set<StructureConstant>([
-    STRUCTURE_SPAWN,
-    STRUCTURE_POWER_SPAWN,
-    STRUCTURE_WALL,
-    STRUCTURE_TOWER,
+const walkableStructureTypes = new Set<StructureConstant>([
+    STRUCTURE_ROAD
 ])
 
 export function evadeBlockers(room: Room, cost: CostMatrix): void {
     const blockers = _([
         room.find(FIND_CREEPS),
         room.find(FIND_STRUCTURES, {
-            filter: s => blockerStructureTypes.has(s.structureType)
+            filter: s => !walkableStructureTypes.has(s.structureType)
         })]).flatten();
     for (const b of blockers)
         cost.set(b.pos.x, b.pos.y, 255);
