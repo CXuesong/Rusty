@@ -1,9 +1,20 @@
 import _ from "lodash";
 
+const blockerStructureTypes = new Set<StructureConstant>([
+    STRUCTURE_SPAWN,
+    STRUCTURE_POWER_SPAWN,
+    STRUCTURE_WALL,
+    STRUCTURE_TOWER,
+])
+
 export function evadeBlockers(room: Room, cost: CostMatrix): void {
-    const creeps = room.find(FIND_CREEPS);
-    for (const c of creeps)
-        cost.set(c.pos.x, c.pos.y, 255);
+    const blockers = _([
+        room.find(FIND_CREEPS),
+        room.find(FIND_STRUCTURES, {
+            filter: s => blockerStructureTypes.has(s.structureType)
+        })]).flatten();
+    for (const b of blockers)
+        cost.set(b.pos.x, b.pos.y, 255);
 }
 
 export function evadeHostileCreeps(room: Room, cost: CostMatrix): void {

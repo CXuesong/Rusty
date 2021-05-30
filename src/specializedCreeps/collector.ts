@@ -40,7 +40,6 @@ interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect 
 interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollect {
     readonly sourceCreepId: Id<Creep>;
     sourceDistance: number;
-    relayTo?: Id<Creep>;
 }
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
@@ -208,9 +207,10 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         });
         // We allow stealing energy from existing collecting creeps.
         const collectingCreeps = enumSpecializedCreeps(CollectorCreep, room)
-            .filter(c => c.state.mode === "collect"
-                && ("sourceId" in c.state || "sourceCreepId" in c.state && c.state.sourceDistance < 2)
-                && (c.state.relayTo || this.id) === this.id)
+            .filter(c => c !== this
+                && c.state.mode === "collect"
+                && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1)
+                && !reachedMaxPeers(c.id, 1))
             .map(c => c.creep)
             .value();
         // Prefer collect from direct source.
@@ -219,18 +219,22 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             ...tombstones,
             ...sources
         ], { maxRooms: 1, roomCallback });
-        if (!nearest || nearest.cost > 50) {
+        this.logger.trace(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
+        if (!nearest || nearest.cost > 20) {
             // If every direct source is too far away...
             const secondary = collectingCreeps.length
                 ? findNearestPath(creep.pos, [...collectingCreeps], { maxRooms: 1, roomCallback })
                 : undefined;
-            if (!nearest || secondary && nearest.cost - secondary.cost > 30)
+            this.logger.trace(`transitCollect: Secondary target: ${nearest?.goal}, cost ${nearest?.cost}.`);
+            if (!nearest || secondary && nearest.cost - secondary.cost > 10)
                 nearest = secondary;
         }
         if (!nearest) return false;
         const destId = nearest.goal.id;
         const nextEvalTime = Game.time + _.random(4, 10);
-        this.logger.info(`Collect ${nearest.goal}.`);
+        this.logger.info(`transitCollect: Collect ${nearest.goal}, path: [${nearest.path.length}], cost ${nearest?.cost}.`);
+        if (!nearest.path.length)
+            this.logger.warning(`transitCollect: Empty path to ${nearest.goal}.`);
         if (nearest.goal instanceof Resource)
             this.state = { mode: "collect", resourceId: nearest.goal.id, destId, nextEvalTime };
         else if (nearest.goal instanceof Tombstone)
@@ -249,7 +253,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     sourceDistance: sourceState.sourceDistance + 1,
                     nextEvalTime
                 };
-                sourceState.relayTo = this.id;
             } else {
                 throw new Error("Unexpected sourceCollector state.");
             }
@@ -462,7 +465,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 || Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
                 // Transient cache lost.
                 || this.pathCache?.targetId !== dest.id) {
-            } {
                 if (!this.transitCollect()) {
                     this.transitIdle();
                     return;

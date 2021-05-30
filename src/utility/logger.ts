@@ -30,12 +30,13 @@ function formatMessageArg(arg: unknown): string {
 export class Logger {
     private readonly minLevel: LogLevel | undefined;
     public constructor(public readonly name: string) {
-        this.minLevel = _(loggerLevels).reverse().find(([m, l]) => {
+        const matchedEntry = _(loggerLevels).findLast(([m, l]) => {
             if (typeof m === "string") {
-                return this.name === m || this.name.startsWith(m + ".");
+                return name === m || name.startsWith(m + ".");
             }
             return !!this.name.match(m);
-        })?.[1];
+        });
+        this.minLevel = matchedEntry?.[1];
     }
     public log(level: LogLevel, ...message: unknown[]) {
         if (this.minLevel == null || level >= this.minLevel) {
