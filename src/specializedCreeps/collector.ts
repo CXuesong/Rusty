@@ -18,7 +18,14 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
 }
 
 type CollectorCreepCollectDestType = Source | Tombstone | Resource | Creep;
-type CollectorCreepDistributeDestType = StructureController | ConstructionSite | StructureSpawn | StructureExtension | StructureTower | StructureRampart;
+type CollectorCreepDistributeDestType
+    = StructureController
+    | ConstructionSite
+    | StructureSpawn
+    | StructureExtension
+    | StructureTower
+    | StructureRampart
+    | StructureWall;
 
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
     mode: "collect";
@@ -73,6 +80,11 @@ interface CollectorCreepStateDistributeRampart extends CollectorCreepStateDistri
     destId: Id<StructureRampart>;
 }
 
+interface CollectorCreepStateDistributeWall extends CollectorCreepStateDistribute {
+    wallId: Id<StructureWall>;
+    destId: Id<StructureWall>;
+}
+
 interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
     controllerId: Id<StructureController>;
     destId: Id<StructureController>;
@@ -93,6 +105,7 @@ export type CollectorCreepState
     | CollectorCreepStateDistributeTower
     | CollectorCreepStateDistributeExtension
     | CollectorCreepStateDistributeRampart
+    | CollectorCreepStateDistributeWall
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
 
@@ -149,6 +162,13 @@ export function structureNeedsRepair(structure: Structure): "now" | "yes" | "lat
         if (structure.hits < 2000 + 7200 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "yes";
         // Rampart has relatively high hitsMax
+        return structure.hits < structure.hitsMax ? "later" : false;
+    }
+    if (structure instanceof StructureWall) {
+        if (structure.hits < 10000)
+            return "now";
+        if (structure.hits < 20000)
+            return "yes";
         return structure.hits < structure.hitsMax ? "later" : false;
     }
     if (structure.hitsMax - structure.hits < 1000 && structure.hits / structure.hitsMax > 0.5) return false;
@@ -361,10 +381,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 }
             }
         }
-        const structures = _(room.find(FIND_MY_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_EXTENSION
-                || s.structureType === STRUCTURE_TOWER
-                || s.structureType === STRUCTURE_RAMPART
+        const structures = _(room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTENSION && s.my
+                || s.structureType === STRUCTURE_TOWER && s.my
+                || s.structureType === STRUCTURE_RAMPART && s.my
+                || s.structureType === STRUCTURE_WALL
         }))
             .map(s => {
                 const c = getTargetingCollectors(s.id);
@@ -451,6 +472,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.state = { mode: "distribute", towerId: nearest.goal.id, destId, nextEvalTime };
             } else if (nearest.goal instanceof StructureRampart) {
                 this.state = { mode: "distribute", rampartId: nearest.goal.id, destId, nextEvalTime };
+            } else if (nearest.goal instanceof StructureWall) {
+                this.state = { mode: "distribute", wallId: nearest.goal.id, destId, nextEvalTime };
             } else
                 throw new Error("Unexpected code path.");
             this.pathCache = { targetId: destId, targetPath: nearest.path };
@@ -603,7 +626,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
-        } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state) {
+        } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state || "wallId" in state) {
             const st = dest = Game.getObjectById(state.destId as Id<StructureSpawn | StructureExtension | StructureTower | StructureRampart>);
             if (!st) {
                 result = undefined

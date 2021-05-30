@@ -45,8 +45,12 @@ export class ConsoleUtils {
         return __internal__getSpecializedCreepsCache();
     }
 
-    public static showStructureRepairStatus(room?: Room): Record<string, number> {
-        const structures = room ? _(room.find(FIND_MY_STRUCTURES) as Structure[]) : _(Game.structures).values();
+    public static showStructureRepairStatus(room?: Room | string): Record<string, number> {
+        if (typeof room === "string") room = Game.rooms[room];
+        const structures = room ? _([
+            room.find(FIND_MY_STRUCTURES) as Structure[],
+            room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_WALL })
+        ]).flatten() : _(Game.structures).values();
         const structureStatus = structures
             .map(s => [s, structureNeedsRepair(s) || ""] as const)
             .groupBy(([s, r]) => r)
