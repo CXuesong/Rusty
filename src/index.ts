@@ -1,18 +1,19 @@
 /// <reference path="./typings.d.ts" />
 import "./utility/polyfill";
+//
+import * as RustyRoom from "./room";
+import * as SpecializedCreeps from "./specializedCreeps";
+import { ConsoleUtils } from "./utility/console";
 import { Logger, loggerLevels, LogLevel } from "./utility/logger";
+
 loggerLevels.push(
     ["Rusty", LogLevel.warning],
     ["Rusty.loop", LogLevel.info],
     ["Rusty.Utility.Console", LogLevel.trace],
     ["Rusty.Utility.Combat", LogLevel.info],
-    ["Rusty.SpecializedCreeps.CollectorCreep.#Smallpaw", LogLevel.trace],
+    ["Rusty.SpecializedCreeps.Frame", LogLevel.info],
+    // ["Rusty.SpecializedCreeps.CollectorCreep.#Plumthistle", LogLevel.trace],
 );
-
-import * as RustyRoom from "./room";
-import * as SpecializedCreeps from "./specializedCreeps";
-import { ConsoleUtils } from "./utility/console";
-
 
 let runtimeTicks = 0;
 let runtimeCpuTimeTotal = 0;

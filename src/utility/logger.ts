@@ -28,17 +28,20 @@ function formatMessageArg(arg: unknown): string {
 }
 
 export class Logger {
-    private readonly minLevel: LogLevel | undefined;
+    private minLevel: LogLevel | "init" | undefined = "init";
     public constructor(public readonly name: string) {
-        const matchedEntry = _(loggerLevels).findLast(([m, l]) => {
-            if (typeof m === "string") {
-                return name === m || name.startsWith(m + ".");
-            }
-            return !!this.name.match(m);
-        });
-        this.minLevel = matchedEntry?.[1];
     }
     public log(level: LogLevel, ...message: unknown[]) {
+        if (this.minLevel === "init") {
+            // Lazy evaluation log level.
+            const matchedEntry = _(loggerLevels).findLast(([m, l]) => {
+                if (typeof m === "string") {
+                    return this.name === m || this.name.startsWith(m + ".");
+                }
+                return !!this.name.match(m);
+            });
+            this.minLevel = matchedEntry?.[1];
+        }
         if (this.minLevel == null || level >= this.minLevel) {
             console.log(`[${this.name}][${getLevelExpr(level)}] ${message.map(m => formatMessageArg(m)).join(" ")}`);
         }
