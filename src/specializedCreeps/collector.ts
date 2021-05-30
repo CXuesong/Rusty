@@ -25,7 +25,6 @@ interface CollectorCreepStateCollect extends CollectorCreepStateBase {
 interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
     readonly sourceId: Id<Source>;
     sourceDistance: 0;
-    relayTo?: Id<Creep>;
 }
 
 interface CollectorCreepStateCollectTombstone extends CollectorCreepStateCollect {
@@ -236,13 +235,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 // Allow queuing up
                 && !reachedMaxPeers(t.id, 10)
         });
-        // We allow stealing energy from existing collecting creeps.
+        // We allow stealing energy from existing collecting creeps,
+        // only if they have already collected some energy.
         const collectingCreeps = enumSpecializedCreeps(CollectorCreep, room)
             .filter(c => c !== this
                 && c.state.mode === "collect"
                 && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1)
                 && !reachedMaxPeers(c.id, 1))
             .map(c => c.creep)
+            .filter(c => c.store.energy / c.store.getCapacity(RESOURCE_ENERGY) >= 0.4)
             .value();
         // Prefer collect from direct source.
         let nearest = findNearestPath<Source | Tombstone | Resource | Creep>(creep.pos, [
@@ -477,13 +478,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const sc = dest = Game.getObjectById(state.sourceCreepId);
             const scollector = sc && getSpecializedCreep(sc, CollectorCreep);
             const scstate = scollector?.state;
-            if (scstate && scstate.mode == "collect" && "relayTo" in scstate && scstate.relayTo === this.id && state.sourceDistance != null) {
+            if (scstate?.mode == "collect" && "sourceDistance" in scstate && scstate.sourceDistance < state.sourceDistance) {
                 result = sc ? sc.transfer(creep, RESOURCE_ENERGY) : undefined;
                 this.logger.trace(`nextFrameCollect: sourceCreep.transfer(creep) -> ${result}.`);
             } else {
                 // In case peer changed source.
                 result = undefined;
-                this.logger.trace(`nextFrameCollect: sourceCreep ${sc} changed source: mode=${scstate?.mode}.`);
+                this.logger.info(`nextFrameCollect: sourceCreep ${sc} changed source: mode=${scstate?.mode}.`);
             }
         } else {
             const source = dest = Game.getObjectById(state.sourceId);
