@@ -148,10 +148,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
     private pathCache: { targetId: string; targetPath: RoomPosition[] | PathStep[] } | undefined;
-    public static spawn(spawn: StructureSpawn): string | SpecializedSpawnCreepErrorCode {
-        const name = spawnCreep(spawn, {
+    public static spawn(spawn: StructureSpawn, variant?: "normal" | "lite"): string | SpecializedSpawnCreepErrorCode {
+        if (!variant) variant = "normal";
+        const name = spawnCreep(spawn, variant === "normal" ? {
             [CARRY]: 2,
             [MOVE]: 2,
+            [WORK]: 1,
+        } : {
+            [CARRY]: 1,
+            [MOVE]: 3,
             [WORK]: 1,
         });
         if (typeof name === "string") {
@@ -344,7 +349,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 && (structureNeedsRepair(s) === "now" || "store" in s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
                 && !reachedMaxPeers(s.id, 4)
             )
-        }) as Array<StructureExtension | StructureTower>;
+        }) as Array<StructureExtension | StructureTower | StructureRampart>;
         const towers = structures.filter((s): s is StructureTower => s instanceof StructureTower);
         const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
         const { controller } = room;
@@ -393,6 +398,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.state = { mode: "distribute", extensionId: nearest.goal.id, destId, nextEvalTime };
             } else if (nearest.goal instanceof StructureTower) {
                 this.state = { mode: "distribute", towerId: nearest.goal.id, destId, nextEvalTime };
+            } else if (nearest.goal instanceof StructureRampart) {
+                this.state = { mode: "distribute", rampartId: nearest.goal.id, destId, nextEvalTime };
             } else
                 throw new Error("Unexpected code path.");
             this.pathCache = { targetId: destId, targetPath: nearest.path };

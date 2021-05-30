@@ -65,7 +65,7 @@ export function onRoomNextFrame(room: Room): void {
             const expc = Math.max(...expectedCollectors);
             if (collectors < expc) {
                 // Spawn collectors if necessary.
-                spawns.remove(trySpawn(spawns, s => CollectorCreep.spawn(s)));
+                spawns.remove(trySpawn(spawns, s => CollectorCreep.spawn(s, _.random() < 0.7 ? "normal" : "lite")));
             }
 
             // Update room indicator
