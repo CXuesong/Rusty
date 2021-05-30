@@ -12,18 +12,30 @@ interface RustyRoomMemory {
 const logger = new Logger("Rusty.Room");
 const populationIndicatorText = new Map<string, string>();
 
+export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
+    var hostiles = room.find(FIND_HOSTILE_CREEPS);
+    var healable = room.find(FIND_MY_CREEPS, { filter: c => c.hitsMax - c.hits >= 20 });
+    for (const tower of towers) {
+        if (hostiles.length && (!healable.length || _.random() < 0.7)) {
+            const target = _(hostiles).sample()!;
+            // Game.notify(`User ${username} spotted in room ${room.name}`);
+            tower.attack(target);
+            continue;
+        }
+        if (healable.length) {
+            const target = _(healable).maxBy(c => (c.hitsMax - c.hits) / c.hitsMax / tower.pos.getRangeTo(c))!;
+            tower.heal(target);
+            continue;
+        }
+    }
+}
+
 export function onRoomNextFrame(room: Room): void {
     if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
     const rusty = room.memory.rusty as RustyRoomMemory;
     const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } }) as StructureTower[];
-    if (towers.length) {
-        var hostiles = room.find(FIND_HOSTILE_CREEPS);
-        if (hostiles.length) {
-            var username = hostiles[0].owner.username;
-            Game.notify(`User ${username} spotted in room ${room.name}`);
-            towers.forEach(tower => tower.attack(_(hostiles).first()!));
-        }
-    }
+    if (towers.length)
+        onTowersNextFrame(room, towers);
     const { nextSpawnTime } = rusty;
     if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
         rusty.nextSpawnTime = Game.time + _.random(3, 10);

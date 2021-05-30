@@ -5,6 +5,8 @@ import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepError
 import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
+const MIN_COLLECTABLE_DROPPED_ENERGY = 20;
+
 interface CollectorCreepStateBase {
     mode: string;
     isWalking?: boolean;
@@ -94,6 +96,7 @@ export type CollectorCreepState
 type CollectorDestId = Id<RoomObject>;
 
 let occupiedDests: Map<CollectorDestId, Set<Id<Creep>>> | undefined;
+
 const emptySet: ReadonlySet<any> = {
     entries: function* () { },
     forEach: () => { },
@@ -148,6 +151,10 @@ function structureNeedsRepair(structure: Structure): "yes" | "now" | false {
     // 2000 -- needs 20 ticks to repair.
     return structure.hits < 2000 || structure.hits / structure.hitsMax < 0.1
         ? "now" : "yes";
+}
+
+function estimateDecayedResourceAmount(currentPos: RoomPosition, target: Resource) {
+    return Math.floor(target.amount * Math.pow(1 - 1 / ENERGY_DECAY, target.pos.getRangeTo(currentPos) * 1.6));
 }
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -224,10 +231,10 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const resources = room.find(FIND_DROPPED_RESOURCES, {
             filter: r => r.resourceType === RESOURCE_ENERGY
                 && !reachedMaxPeers(r.id, 1)
-                && r.amount * (1 - r.pos.getRangeTo(creep) * 1.6 / ENERGY_DECAY) > 20
+                && estimateDecayedResourceAmount(creep.pos, r) >= MIN_COLLECTABLE_DROPPED_ENERGY
         }) as Resource<RESOURCE_ENERGY>[];
         const tombstones = room.find(FIND_TOMBSTONES, {
-            filter: t => t.store.energy >= 20 && t.ticksToDecay >= 3
+            filter: t => t.store.energy >= MIN_COLLECTABLE_DROPPED_ENERGY && t.ticksToDecay >= 3
                 && !reachedMaxPeers(t.id, 2)
         });
         const sources = room.find(FIND_SOURCES_ACTIVE, {
@@ -299,6 +306,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private transitDistribute(): boolean {
         const { creep, state } = this;
+        if (!creep.store.energy) return false;
         const { room } = creep;
         const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
             const c = getTargetingCollectors(id);
@@ -453,12 +461,38 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private nextFrameIdle(): void {
         const { creep, state } = this;
         if (state.mode !== "idle") throw new Error("Invalid state.");
-        if (Game.time < state.nextEvalTime) return;
-        if (creep.store.energy < 40 && this.transitCollect())
+        if (Game.time < state.nextEvalTime) {
+            creep.say(`Idle${state.nextEvalTime - Game.time}`);
             return;
-        if (creep.store.energy > 10 && this.transitDistribute())
+        }
+        const energy = creep.store.energy;
+        const maxEnergy = creep.store.getCapacity(RESOURCE_ENERGY);
+        if ((energy < 20 || energy / maxEnergy < 0.4) && this.transitCollect())
             return;
+        if ((energy > 60 || energy / maxEnergy < 0.6) && this.transitDistribute())
+            return;
+        const tryPickupNearest = () => {
+            if (maxEnergy - energy < MIN_COLLECTABLE_DROPPED_ENERGY) return false;
+            const ts = creep.pos.findClosestByRange(FIND_TOMBSTONES, {
+                filter: ts => ts.store.energy >= MIN_COLLECTABLE_DROPPED_ENERGY && !getTargetingCollectors(ts.id).size
+            });
+            if (ts && creep.pos.inRangeTo(ts, 4))
+                return this.transitCollect();
+            const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+                filter: r => r.resourceType === RESOURCE_ENERGY
+                    && estimateDecayedResourceAmount(creep.pos, r) >= MIN_COLLECTABLE_DROPPED_ENERGY
+                    && !getTargetingCollectors(r.id).size
+            });
+            if (dropped && creep.pos.inRangeTo(dropped, 4))
+                return this.transitCollect();
+        };
+
+        if (tryPickupNearest()) return;
+        if (energy < 20 && this.transitCollect()) return;
+        if (this.transitDistribute()) return;
+
         this.transitIdle();
+        creep.say("IdleStil");
     }
     private nextFrameCollect(): void {
         if (!this.checkEnergyConstraint()) return;
