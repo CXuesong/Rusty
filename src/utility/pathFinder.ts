@@ -9,7 +9,6 @@ export function evadeBlockers(room: Room, cost: CostMatrix): void {
 export function evadeHostileCreeps(room: Room, cost: CostMatrix): void {
     const hostile = room.find(FIND_HOSTILE_CREEPS);
     for (const h of hostile) {
-        console.log(`Hostile: ${h}`);
         const { x, y } = h.pos;
         if (h.getActiveBodyparts(RANGED_ATTACK)) {
             for (let xd = -3; xd <= 3; xd++)
@@ -37,8 +36,7 @@ export function findNearestPath<T extends RoomObject>(origin: RoomPosition, goal
     const rawGoals = buildPathFinderGoals(goals);
     const result = PathFinder.search(origin, rawGoals, opts);
     if (result.incomplete) return undefined;
-    const lastPos = _(result.path).last();
-    if (!lastPos) return undefined;
+    const lastPos = _(result.path).last() || origin;
     const goal = _(rawGoals).minBy(g => Math.abs(lastPos.getRangeTo(g.pos) - g.range));
     if (!goal) throw new Error("Unexpected failure when recovering RoomObject from position.");
     return {

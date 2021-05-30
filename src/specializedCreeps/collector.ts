@@ -130,6 +130,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         switch (state.mode) {
             case "idle":
                 this.nextFrameIdle();
+                break;
             case "collect":
                 this.nextFrameCollect();
                 break;
@@ -188,6 +189,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 const costs = new PathFinder.CostMatrix();
                 evadeBlockers(room, costs);
                 evadeHostileCreeps(room, costs);
+                costs.set(creep.pos.x, creep.pos.y, 0);
                 return costs;
             }
         });
@@ -214,7 +216,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private transitDistribute(): boolean {
         const { creep, state } = this;
-        this.state
         const { room } = creep;
         const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
             const c = getTargetingCollectors(id);
@@ -230,6 +231,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const costs = costMatrix || new PathFinder.CostMatrix();
             evadeBlockers(room, costs);
             evadeHostileCreeps(room, costs);
+            costs.set(creep.pos.x, creep.pos.y, 0);
             return costs;
         };
         if (state.mode === "distribute") {
@@ -272,7 +274,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { controller } = room;
         let controllerPriority: number;
         if (controller?.my) {
-            if (controller.ticksToDowngrade <= 1500 && !reachedMaxPeers(controller.id, 4)) {
+            if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 1500 && !reachedMaxPeers(controller.id, 4)) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
             } else if (constructionSites.length > 2) {
@@ -288,16 +290,24 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const nextEvalTime = Game.time + _.random(4, 10);
         if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {
             const spawns = room.find(FIND_MY_SPAWNS, { filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
-            const goals = [...constructionSites, ...spawns];
-            const nearest = findNearestPath(creep.pos, goals, { maxRooms: 1, roomCallback });
-            if (!nearest) return false;
+            const extensions = room.find(FIND_MY_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            }) as StructureExtension[];
+            const goals = [...constructionSites, ...extensions, ...spawns];
+            const nearest = findNearestPath(creep.pos, goals, { maxRooms: 1, roomCallback: roomCallback });
+            if (!nearest) {
+                this.logger.warning(`transitDistribute: findNearestPath(${goals}) -> undefined.`);
+                return false;
+            }
             const destId = nearest.goal.id;
-            this.logger.info(`Collect ${nearest.goal}.`);
+            this.logger.info(`Distribute ${nearest.goal}.`);
             if (nearest.goal instanceof StructureSpawn) {
                 this.state = { mode: "distribute", spawnId: nearest.goal.id, destId, nextEvalTime };
             }
             else if (nearest.goal instanceof ConstructionSite) {
                 this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
+            } else if (nearest.goal instanceof StructureExtension) {
+                this.state = { mode: "distribute", extensionId: nearest.goal.id, destId, nextEvalTime };
             } else
                 throw new Error("Unexpected code path.");
             this.pathCache = { targetId: destId, targetPath: nearest.path };
@@ -323,13 +333,14 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 return true;
             case "collect":
                 if (!creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
-                    this.transitDistribute();
+                    this.logger.trace("Reached max energy cap. transitDistribute.");
+                    this.transitDistribute() || this.transitIdle();
                     return false;
                 }
                 return true;
             case "distribute":
                 if (!creep.store.energy) {
-                    this.transitCollect();
+                    this.transitCollect() || this.transitIdle();
                     return false;
                 }
                 return true;
@@ -428,19 +439,19 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if ("spawnId" in state) {
             const spawn = dest = Game.getObjectById(state.spawnId);
             result = spawn ? creep.transfer(spawn, RESOURCE_ENERGY) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.transfer -> ${result}.`);
+            this.logger.trace(`nextFrameDistribute: creep.transfer -> ${result}.`);
         } else if ("constructionSiteId" in state) {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.build -> ${result}.`);
+            this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
         } else if ("extensionId" in state) {
             const extension = dest = Game.getObjectById(state.extensionId);
             result = extension ? creep.transfer(extension, RESOURCE_ENERGY) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.transfer -> ${result}.`);
+            this.logger.trace(`nextFrameDistribute: creep.transfer -> ${result}.`);
         } else {
             const controller = dest = Game.getObjectById(state.controllerId);
             result = controller ? creep.upgradeController(controller) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.upgradeController -> ${result}.`);
+            this.logger.trace(`nextFrameDistribute: creep.upgradeController -> ${result}.`);
         }
         state.isWalking = result === ERR_NOT_IN_RANGE;
         if (result == null || result === ERR_NOT_IN_RANGE) {
