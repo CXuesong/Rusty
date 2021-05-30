@@ -9,7 +9,8 @@ loggerLevels.push(
     ["Rusty", LogLevel.warning],
     ["Rusty.loop", LogLevel.info],
     ["Rusty.Utility.Console", LogLevel.trace],
-    // ["Rusty.SpecializedCreeps.CollectorCreep.#Flamepounce", LogLevel.trace],
+    ["Rusty.Utility.Combat", LogLevel.info],
+    // ["Rusty.SpecializedCreeps.CollectorCreep", LogLevel.trace],
 );
 
 let runtimeTicks = 0;

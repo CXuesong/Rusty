@@ -180,6 +180,18 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const peers = c.size - (c.has(this.id) ? 1 : 0);
             return peers >= maxPeers;
         }
+        const roomCallback = (roomName: string) => {
+            const room = Game.rooms[roomName];
+            if (!room) {
+                this.logger.warning(`Unable to check room ${roomName}.`);
+                return false;
+            }
+            const costs = new PathFinder.CostMatrix();
+            evadeBlockers(room, costs);
+            evadeHostileCreeps(room, costs);
+            costs.set(creep.pos.x, creep.pos.y, 0);
+            return costs;
+        }
         const resources = room.find(FIND_DROPPED_RESOURCES, {
             filter: r => r.resourceType === RESOURCE_ENERGY
                 && !reachedMaxPeers(r.id, 1)
@@ -199,27 +211,22 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             .filter(c => c.state.mode === "collect"
                 && ("sourceId" in c.state || "sourceCreepId" in c.state && c.state.sourceDistance < 2)
                 && (c.state.relayTo || this.id) === this.id)
-            .map(c => c.creep);
-        const goals = [
+            .map(c => c.creep)
+            .value();
+        // Prefer collect from direct source.
+        let nearest = findNearestPath<Source | Tombstone | Resource | Creep>(creep.pos, [
             ...resources,
             ...tombstones,
-            ...sources,
-            ...collectingCreeps
-        ];
-        const nearest = findNearestPath(creep.pos, goals, {
-            maxRooms: 1, roomCallback: roomName => {
-                const room = Game.rooms[roomName];
-                if (!room) {
-                    this.logger.warning(`Unable to check room ${roomName}.`);
-                    return false;
-                }
-                const costs = new PathFinder.CostMatrix();
-                evadeBlockers(room, costs);
-                evadeHostileCreeps(room, costs);
-                costs.set(creep.pos.x, creep.pos.y, 0);
-                return costs;
-            }
-        });
+            ...sources
+        ], { maxRooms: 1, roomCallback });
+        if (!nearest || nearest.cost > 50) {
+            // If every direct source is too far away...
+            const secondary = collectingCreeps.length
+                ? findNearestPath(creep.pos, [...collectingCreeps], { maxRooms: 1, roomCallback })
+                : undefined;
+            if (!nearest || secondary && nearest.cost - secondary.cost > 30)
+                nearest = secondary;
+        }
         if (!nearest) return false;
         const destId = nearest.goal.id;
         const nextEvalTime = Game.time + _.random(4, 10);
@@ -466,6 +473,10 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 const moveResult = creep.moveByPath(this.pathCache.targetPath);
                 if (moveResult !== OK) {
                     this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                    if (moveResult === ERR_NOT_FOUND) {
+                        this.logger.trace(`pathCache: ${JSON.stringify(this.pathCache)}.`);
+                        this.transitCollect();
+                    }
                 }
             }
             return;

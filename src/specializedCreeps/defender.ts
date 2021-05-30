@@ -1,7 +1,8 @@
 import _ from "lodash/index";
+import { evaluateAttackPower, isEliminationPossible } from "src/utility/combat";
 import { Logger } from "src/utility/logger";
 import { SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
-import { spawnCreep, initializeCreepMemory } from "./spawn";
+import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 export interface DefenderCreepState {
     spawnId?: Id<StructureSpawn>;
@@ -11,6 +12,7 @@ export interface DefenderCreepState {
 export class DefenderCreep extends SpecializedCreepBase<DefenderCreepState> {
     public static readonly rustyType = "defender";
     private logger = new Logger(`Rusty.SpecializedCreeps.DefenderCreep.#${this.creep.name}`);
+    private readonly myAttackPower: number;
     public static spawn(spawn: StructureSpawn): string | SpecializedSpawnCreepErrorCode {
         const name = spawnCreep(spawn, {
             [RANGED_ATTACK]: 1,
@@ -20,6 +22,10 @@ export class DefenderCreep extends SpecializedCreepBase<DefenderCreepState> {
             initializeCreepMemory<DefenderCreepState>(name, DefenderCreep.rustyType, {});
         }
         return name;
+    }
+    public constructor(public id: Id<Creep>) {
+        super(id);
+        this.myAttackPower = evaluateAttackPower(this.creep);
     }
     public nextFrame(): void {
         const { creep, state } = this;
@@ -36,15 +42,14 @@ export class DefenderCreep extends SpecializedCreepBase<DefenderCreepState> {
         }
         let target = state.targetId && Game.getObjectById(state.targetId);
         if (!target) {
-            if (creep.room !== spawn.room) {
+            const { room } = creep;
+            if (room !== spawn.room) {
                 creep.moveTo(spawn);
                 return;
             }
             // Select target
-            target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {
-                filter: c => c.room === spawn?.room,
-                maxRooms: 1
-            });
+            const hostile = room.find(FIND_HOSTILE_CREEPS);
+            target = hostile.find(h => isEliminationPossible(creep, h));
             state.targetId = target?.id;
             if (target) {
                 this.logger.warning(`Target locked: ${target}.`);

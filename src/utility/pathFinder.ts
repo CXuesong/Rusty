@@ -41,6 +41,7 @@ export function findNearestPath<T extends RoomObject>(origin: RoomPosition, goal
     const lastPos = _(result.path).last() || origin;
     const goal = _(rawGoals).minBy(g => Math.abs(lastPos.getRangeTo(g.pos) - g.range));
     if (!goal) throw new Error("Unexpected failure when recovering RoomObject from position.");
+    // console.log("findNearestPath -> " + JSON.stringify(result.path));
     return {
         goal: goal.roomObject,
         path: result.path,

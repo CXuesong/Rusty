@@ -1,8 +1,11 @@
+import { Logger } from "src/utility/logger";
 import type { SpecializedCreepBase, SpecializedCreepType } from "./base";
 
 const creepCache = new Map<Id<Creep>, SpecializedCreepBase>();
 
 export const knownCreepTypes: SpecializedCreepType[] = [];
+
+const logger = new Logger("Rusty.SpecializedCreeps.Registry");
 
 function getNewSpecializedCreepInst(creep: Creep | Id<Creep>): SpecializedCreepBase | undefined {
     if (!(creep instanceof Creep)) {
@@ -22,7 +25,16 @@ export function getSpecializedCreep<T extends SpecializedCreepType>(creep: Creep
     // Spawnning screep does not own ID.
     if (!id) return undefined;
     let c = creepCache.get(id);
-    if (!c) {
+    if (c) {
+        // Re-validate creeps
+        if (!Game.getObjectById(id)) {
+            // Cache invalidated
+            logger.warning(`Invalidating creep: ${creep} (${id}).`);
+            creepCache.delete(id);
+            c.dispose();
+            c = undefined;
+        }
+    } else {
         c = getNewSpecializedCreepInst(creep);
         if (c) creepCache.set(id, c);
     }
