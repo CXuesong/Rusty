@@ -6,6 +6,7 @@ import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 const MIN_COLLECTABLE_DROPPED_ENERGY = 20;
+const AGGRESSIVE_UPGRADE_MODE = true;
 
 interface CollectorCreepStateBase {
     mode: string;
@@ -183,23 +184,29 @@ export function structureNeedsRepair(structure: Structure): "now" | "yes" | "lat
     // some WALL does not have hitsMax
     if (!structure.hitsMax || structure.hits >= structure.hitsMax) return false;
     if (structure instanceof StructureRampart) {
+        if (AGGRESSIVE_UPGRADE_MODE) {
+            if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "now";
+            if (structure.hits < 5000 + 3600 * 2 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "yes";
+            if (structure.hits < 5000 + 3600 * 12 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "later";
+            return false;
+        }
         // 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME = 15,800
-        if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
-            return "now";
-        if (structure.hits < 10000 + 3600 * 24 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
-            return "yes";
+        if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "now";
+        if (structure.hits < 10000 + 3600 * 24 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "yes";
         // Rampart has relatively high hitsMax
-        if (structure.hits < 50000 + 3600 * 24 * 2 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
-            return "later";
+        if (structure.hits < 50000 + 3600 * 24 * 2 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "later";
         return false;
     }
     if (structure instanceof StructureWall) {
-        if (structure.hits < 50000)
-            return "now";
-        if (structure.hits < 500000)
-            return "yes";
-        if (structure.hits < 1000000)
-            return "later";
+        if (AGGRESSIVE_UPGRADE_MODE) {
+            if (structure.hits < 30000) return "now";
+            if (structure.hits < 50000) return "yes";
+            if (structure.hits < 100000) return "later";
+            return false;
+        }
+        if (structure.hits < 50000) return "now";
+        if (structure.hits < 500000) return "yes";
+        if (structure.hits < 1000000) return "later";
         return false;
     }
     if (structure instanceof StructureRoad) {
