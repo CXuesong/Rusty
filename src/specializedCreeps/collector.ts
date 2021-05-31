@@ -354,9 +354,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if (!nearest) return false;
         const destId = nearest.goal.id;
         const nextEvalTime = Game.time + _.random(4, 10);
-        this.logger.info(`transitCollect: Collect ${nearest.goal}, path: [${nearest.path.length}], cost ${nearest?.cost}.`);
-        if (!nearest.path.length)
-            this.logger.warning(`transitCollect: Empty path to ${nearest.goal}.`);
+        const distance = nearest.goal.pos.getRangeTo(creep);
+        this.logger.info(`transitCollect: Collect ${nearest.goal}, path: [${nearest.path.length}], cost ${nearest?.cost}, distnace: ${distance}.`);
+        if (!nearest.path.length && distance > 1) {
+            this.logger.warning(`transitCollect: Empty path to ${nearest.goal}. Distance: ${distance}.`);
+        }
         if (nearest.goal instanceof Resource)
             this.state = { mode: "collect", resourceId: nearest.goal.id, destId, nextEvalTime };
         else if (nearest.goal instanceof Tombstone)
@@ -735,9 +737,12 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
             if (!creep.fatigue) {
                 if (!this.pathCache) throw new Error("Assertion failure.");
-                const moveResult = creep.moveByPath(this.pathCache.targetPath);
-                if (moveResult !== OK) {
-                    this.logger.warning(`nextFrameDistribute: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                if (this.pathCache.targetPath.length) {
+                    const moveResult = creep.moveByPath(this.pathCache.targetPath);
+                    if (moveResult !== OK) {
+                        this.logger.warning(`nextFrameDistribute: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                        creep.room.visual.rect(creep.pos.x, creep.pos.y, 1, 1, { fill: "#ff0000" });
+                    }
                 }
             }
             return;

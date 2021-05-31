@@ -83,4 +83,13 @@ export class ConsoleUtils {
         console.log(JSON.stringify(result));
         return result;
     }
+
+    public static highlight(obj: RoomObject | string): RoomPosition | undefined {
+        if (typeof obj === "string")
+            obj = Game.powerCreeps[obj] || Game.creeps[obj] || Game.spawns[obj];
+        if (!obj || !obj.room) return undefined;
+        obj.room.visual.rect(obj.pos.x - 1, obj.pos.y - 1, 3, 3, { fill: "#ffcccc", opacity: 0.6 });
+        obj.room.visual.rect(obj.pos.x, obj.pos.y, 1, 1, { fill: "#6666ff", opacity: 0.6 });
+        return obj.pos;
+    }
 }
