@@ -180,26 +180,41 @@ function removeTargetingCollector(id: CollectorDestId, collector: Id<Creep>): vo
 }
 
 export function structureNeedsRepair(structure: Structure): "now" | "yes" | "later" | false {
+    // some WALL does not have hitsMax
     if (!structure.hitsMax || structure.hits >= structure.hitsMax) return false;
     if (structure instanceof StructureRampart) {
+        // 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME = 15,800
         if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "now";
-        if (structure.hits < 100000 + 36 * 24 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
+        if (structure.hits < 10000 + 3600 * 24 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "yes";
         // Rampart has relatively high hitsMax
-        return "later";
+        if (structure.hits < 50000 + 3600 * 24 * 2 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
+            return "later";
+        return false;
     }
     if (structure instanceof StructureWall) {
         if (structure.hits < 50000)
             return "now";
-        if (structure.hits < 1000000)
+        if (structure.hits < 500000)
             return "yes";
-        return "later";
+        if (structure.hits < 1000000)
+            return "later";
+        return false;
     }
     if (structure instanceof StructureRoad) {
         if (structure.hits < 2000 || structure.hits / structure.hitsMax < 0.2)
             return "now";
         if (structure.hits / structure.hitsMax < 0.8)
+            return "yes";
+        return "later";
+    }
+    // Tactic targets
+    if (structure instanceof StructureTower || structure instanceof StructureSpawn) {
+        const damage = structure.hitsMax - structure.hits;
+        if (damage > 500)
+            return "now";
+        if (damage > 100)
             return "yes";
         return "later";
     }

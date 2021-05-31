@@ -49,15 +49,26 @@ export class ConsoleUtils {
         return __internal__debugInfo.getOccupiedDests();
     }
 
-    public static showStructureRepairStatus(room?: Room | string): Record<string, number> {
-        if (typeof room === "string") room = Game.rooms[room];
-        const structures = room ? _([
-            room.find(FIND_MY_STRUCTURES) as Structure[],
-            room.find(FIND_STRUCTURES, {
+    public static showStructureRepairStatus(room?: Room | string | Array<Room | string>): Record<string, number> {
+        room = room || _(Game.spawns).values().map(s => s.room).uniq().value();
+        if (!Array.isArray(room)) room = [room];
+        if (!room.length) return {};
+        const normalizedRooms = room.map(r => {
+            if (typeof r === "string") {
+                const rr = Game.rooms[r];
+                if (!rr)
+                    throw new Error(`Cannot find room ${r}.`);
+                return rr;
+            }
+            return r;
+        });
+        const structures = _(normalizedRooms).map(r => [
+            r.find(FIND_MY_STRUCTURES) as Structure[],
+            r.find(FIND_STRUCTURES, {
                 filter: s => s.structureType === STRUCTURE_WALL
                     || s.structureType === STRUCTURE_ROAD
             })
-        ]).flatten() : _(Game.structures).values();
+        ]).flatten().flatten();
         const structureStatus = structures
             .map(s => [s, structureNeedsRepair(s) || ""] as const)
             .groupBy(([s, r]) => r)
