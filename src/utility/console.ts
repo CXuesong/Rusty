@@ -46,14 +46,17 @@ export class ConsoleUtils {
     }
 
     public static get collectorDestCache(): unknown {
-        return __internal__debugInfo.occupiedDests;
+        return __internal__debugInfo.getOccupiedDests();
     }
 
     public static showStructureRepairStatus(room?: Room | string): Record<string, number> {
         if (typeof room === "string") room = Game.rooms[room];
         const structures = room ? _([
             room.find(FIND_MY_STRUCTURES) as Structure[],
-            room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_WALL })
+            room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_WALL
+                    || s.structureType === STRUCTURE_ROAD
+            })
         ]).flatten() : _(Game.structures).values();
         const structureStatus = structures
             .map(s => [s, structureNeedsRepair(s) || ""] as const)

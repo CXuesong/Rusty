@@ -45,7 +45,7 @@ export function onNextFrame() {
     }
     // Housekeeping
     if (Game.time >= nextHouseKeepingTime) {
-        nextHouseKeepingTime = Game.time + _.random(5);
+        nextHouseKeepingTime = Game.time + _.random(50, 150);
         logger.info(`Housekeeping. Next housekeeping time: ${nextHouseKeepingTime}.`);
         // Order is important to ensure proper disposal.
         registryHouseKeeping(logger);

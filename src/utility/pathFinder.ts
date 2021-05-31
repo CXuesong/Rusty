@@ -8,7 +8,7 @@ export function evadeBlockers(room: Room, cost: CostMatrix): void {
     const blockers = _([
         room.find(FIND_CREEPS),
         room.find(FIND_STRUCTURES, {
-            filter: s => !walkableStructureTypes.has(s.structureType)
+            filter: s => s.structureType === STRUCTURE_RAMPART ? !s.my : !walkableStructureTypes.has(s.structureType)
         })]).flatten();
     for (const b of blockers)
         cost.set(b.pos.x, b.pos.y, 255);

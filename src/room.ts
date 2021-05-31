@@ -14,7 +14,7 @@ const populationIndicatorText = new Map<string, string>();
 
 export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
     var hostiles = room.find(FIND_HOSTILE_CREEPS);
-    var healable = room.find(FIND_MY_CREEPS, { filter: c => c.hitsMax - c.hits >= 20 });
+    var healable = room.find(FIND_MY_CREEPS, { filter: c => c.ticksToLive != null && c.ticksToLive > 50 && c.hitsMax - c.hits >= 20 });
     for (const tower of towers) {
         if (hostiles.length && (!healable.length || _.random() < 0.7)) {
             const target = _(hostiles).sample()!;

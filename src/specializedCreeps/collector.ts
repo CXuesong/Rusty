@@ -182,17 +182,17 @@ function removeTargetingCollector(id: CollectorDestId, collector: Id<Creep>): vo
 export function structureNeedsRepair(structure: Structure): "now" | "yes" | "later" | false {
     if (!structure.hitsMax || structure.hits >= structure.hitsMax) return false;
     if (structure instanceof StructureRampart) {
-        if (structure.hits < 1000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
+        if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "now";
-        if (structure.hits < 2000 + 7200 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
+        if (structure.hits < 100000 + 36 * 24 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME)
             return "yes";
         // Rampart has relatively high hitsMax
         return "later";
     }
     if (structure instanceof StructureWall) {
-        if (structure.hits < 10000)
+        if (structure.hits < 50000)
             return "now";
-        if (structure.hits < 20000)
+        if (structure.hits < 1000000)
             return "yes";
         return "later";
     }
@@ -214,7 +214,7 @@ function estimateDecayedResourceAmount(currentPos: RoomPosition, target: Resourc
 }
 
 export const __internal__debugInfo = {
-    occupiedDests
+    getOccupiedDests: () => occupiedDests
 };
 
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
@@ -451,11 +451,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { controller } = room;
         let controllerPriority: number;
         if (controller?.my) {
-            if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 1500 && !reachedMaxPeers(controller.id, 4)) {
+            if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 3600 && !reachedMaxPeers(controller.id, 4)) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
-            } else if (towers.length || constructionSites.length > 2) {
-                controllerPriority = 0
             } else if (!reachedMaxPeers(controller.id, 6)) {
                 controllerPriority = 0.2;
             } else if (!reachedMaxPeers(controller.id, 10)) {
