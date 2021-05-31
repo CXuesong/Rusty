@@ -243,17 +243,32 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
     private pathCache: { targetId: string; targetPath: RoomPosition[] | PathStep[] } | undefined;
-    public static spawn(spawn: StructureSpawn, variant?: "normal" | "lite"): string | SpecializedSpawnCreepErrorCode {
+    public static spawn(spawn: StructureSpawn, variant?: "normal" | "tall" | "grand"): string | SpecializedSpawnCreepErrorCode {
         if (!variant) variant = "normal";
-        const name = spawnCreep(spawn, variant === "normal" ? {
-            [CARRY]: 2,
-            [MOVE]: 2,
-            [WORK]: 1,
-        } : {
-            [CARRY]: 1,
-            [MOVE]: 3,
-            [WORK]: 1,
-        });
+        const name = spawnCreep(spawn, (() => {
+            if (variant === "normal")
+                // 300
+                return {
+                    [CARRY]: 2,     // 50
+                    [MOVE]: 2,      // 50
+                    [WORK]: 1,      // 100
+                }
+            if (variant === "tall")
+                // 500
+                return {
+                    [CARRY]: 2,
+                    [MOVE]: 4,
+                    [WORK]: 2,
+                }
+            if (variant === "grand")
+                // 800
+                return {
+                    [CARRY]: 2,
+                    [MOVE]: 6,
+                    [WORK]: 4,
+                }
+            throw new RangeError(`Unexpected variant ${variant}.`);
+        })());
         if (typeof name === "string") {
             initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "idle", nextEvalTime: Game.time });
         }

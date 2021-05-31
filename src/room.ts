@@ -47,8 +47,8 @@ export function onRoomNextFrame(room: Room): void {
             const creeps = room.find(FIND_MY_CREEPS);
             const defenders = _(creeps).filter(c => isSpecializedCreepOf(c, DefenderCreep)).size();
             const collectors = _(creeps).filter(c => isSpecializedCreepOf(c, CollectorCreep)).size();
-            // Do not need to spawn defender under safe mode.
-            if (collectors >= 1 && (!controller?.safeMode || controller.safeMode < 1500)) {
+            // Do not need to spawn defender under safe mode, or when there is tower.
+            if (!towers.length && collectors >= 1 && (!controller?.safeMode || controller.safeMode < 1500)) {
                 if (defenders < 1) {
                     // Note: if you spawn twice, only the last spawn will be kept.
                     spawns.remove(trySpawn(spawns, s => DefenderCreep.spawn(s)));
@@ -77,7 +77,22 @@ export function onRoomNextFrame(room: Room): void {
             const expc = Math.max(...expectedCollectors);
             if (collectors < expc) {
                 // Spawn collectors if necessary.
-                spawns.remove(trySpawn(spawns, s => CollectorCreep.spawn(s, _.random() < 0.7 ? "normal" : "lite")));
+                spawns.remove(trySpawn(spawns, s => {
+                    // Try spawn a bigger one first.
+                    const rand = _.random();
+                    // 40%
+                    if (rand < 0.4) {
+                        const r = CollectorCreep.spawn(s, "grand");
+                        if (typeof r === "string") return r;
+                    }
+                    // 40% +
+                    if (rand < 0.7) {
+                        const r = CollectorCreep.spawn(s, "tall");
+                        if (typeof r === "string") return r;
+                    }
+                    // 20% +
+                    return CollectorCreep.spawn(s, "normal");
+                }));
             }
 
             // Update room indicator
