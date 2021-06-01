@@ -6,7 +6,8 @@ import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepError
 import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
-const MIN_COLLECTABLE_DROPPED_ENERGY = 20;
+const MIN_COLLECTABLE_ENERGY = 20;
+const MIN_COLLECTABLE_ENERGY_NEAR = 5;
 const MAX_SOURCE_REGENERATION_WAIT = 20;
 const AGGRESSIVE_UPGRADE_MODE = true;
 
@@ -369,14 +370,21 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const resources = room.find(FIND_DROPPED_RESOURCES, {
             filter: r => r.resourceType === RESOURCE_ENERGY
                 && !reachedMaxPeers(r.id, 1)
-                && estimateDecayedResourceAmount(creep.pos, r) >= MIN_COLLECTABLE_DROPPED_ENERGY
+                && (
+                    r.amount >= MIN_COLLECTABLE_ENERGY_NEAR && creep.pos.inRangeTo(r, 2)
+                    || estimateDecayedResourceAmount(creep.pos, r) >= MIN_COLLECTABLE_ENERGY
+                )
         }) as Resource<RESOURCE_ENERGY>[];
         const tombstones = room.find(FIND_TOMBSTONES, {
-            filter: t => t.store.energy >= MIN_COLLECTABLE_DROPPED_ENERGY && t.ticksToDecay >= 3
-                && !reachedMaxPeers(t.id, 2)
+            filter: t => (
+                t.store.energy >= MIN_COLLECTABLE_ENERGY && t.ticksToDecay >= 3
+                || t.store.energy >= MIN_COLLECTABLE_ENERGY_NEAR && creep.pos.inRangeTo(t, 2)
+            ) && !reachedMaxPeers(t.id, 2)
         });
         const sources = room.find(FIND_SOURCES, {
-            filter: t => t.energy >= 30 || t.energyCapacity >= 100 && t.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT
+            filter: t => t.energy >= MIN_COLLECTABLE_ENERGY
+                || t.energy >= MIN_COLLECTABLE_ENERGY_NEAR && creep.pos.inRangeTo(t, 2)
+                || t.energyCapacity >= 100 && t.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT
                 // Allow queuing up
                 && !reachedMaxPeers(t.id, 10)
         });
@@ -646,15 +654,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if ((energy > 60 || energy / maxEnergy < 0.6) && this.transitDistribute())
             return;
         const tryPickupNearest = () => {
-            if (maxEnergy - energy < MIN_COLLECTABLE_DROPPED_ENERGY) return false;
+            if (maxEnergy - energy < MIN_COLLECTABLE_ENERGY) return false;
             const ts = creep.pos.findClosestByRange(FIND_TOMBSTONES, {
-                filter: ts => ts.store.energy >= MIN_COLLECTABLE_DROPPED_ENERGY && !getTargetingCollectors(ts.id).size
+                filter: ts => ts.store.energy >= MIN_COLLECTABLE_ENERGY && !getTargetingCollectors(ts.id).size
             });
             if (ts && creep.pos.inRangeTo(ts, 4))
                 return this.transitCollect();
             const dropped = creep.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
                 filter: r => r.resourceType === RESOURCE_ENERGY
-                    && estimateDecayedResourceAmount(creep.pos, r) >= MIN_COLLECTABLE_DROPPED_ENERGY
+                    && estimateDecayedResourceAmount(creep.pos, r) >= MIN_COLLECTABLE_ENERGY
                     && !getTargetingCollectors(r.id).size
             });
             if (dropped && creep.pos.inRangeTo(dropped, 4))
