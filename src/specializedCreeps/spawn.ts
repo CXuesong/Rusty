@@ -17,26 +17,27 @@ export function initializeCreepMemory<TState extends Record<string, any> = {}>(c
     Memory.creeps[creepName] = buildCreepMemory(rustyType, state);
 }
 
+export interface SpawnOptionsEx extends SpawnOptions {
+    namePrefix?: string;
+}
+
 export function spawnCreep(spawn: StructureSpawn,
     body: BodyPartConstant[] | BodyPartProfile,
-    options?: SpawnOptions): string | SpecializedSpawnCreepErrorCode {
+    options?: SpawnOptionsEx): string | SpecializedSpawnCreepErrorCode {
     if (!Array.isArray(body)) body = bodyPartProfileToArray(body);
     if (spawn.spawning) {
         logger.warning(`spawnCreep: Spawn ${spawn.name} is currently spawning ${spawn.spawning.name} (ETA ${spawn.spawning.remainingTime} ticks).`);
         return ERR_BUSY;
     }
+    const { namePrefix = "", ...rawOptions } = options || {};
     let name: string;
     const result = ((): Exclude<ScreepsReturnCode, ERR_NAME_EXISTS> => {
         let r: ScreepsReturnCode;
-        if ((r = spawn.spawnCreep(body, name = randomWarriorName(), options)) !== ERR_NAME_EXISTS) return r;
-        if ((r = spawn.spawnCreep(body, name = randomWarriorName(), options)) !== ERR_NAME_EXISTS) return r;
-        if ((r = spawn.spawnCreep(body, name = randomApprenticeName(), options)) !== ERR_NAME_EXISTS) return r;
-        if ((r = spawn.spawnCreep(body, name = randomLeaderName(), options)) !== ERR_NAME_EXISTS) return r;
-        for (let i = 0; i < 10; i++) {
-            if ((r = spawn.spawnCreep(body, name = randomWarriorName() + _.random(999999999), options)) !== ERR_NAME_EXISTS) return r;
-            if ((r = spawn.spawnCreep(body, name = randomApprenticeName() + _.random(999999999), options)) !== ERR_NAME_EXISTS) return r;
-            if ((r = spawn.spawnCreep(body, name = randomLeaderName() + _.random(999999999), options)) !== ERR_NAME_EXISTS) return r;
-        }
+        if ((r = spawn.spawnCreep(body, name = namePrefix + randomWarriorName(), rawOptions)) !== ERR_NAME_EXISTS) return r;
+        if ((r = spawn.spawnCreep(body, name = namePrefix + randomWarriorName(), rawOptions)) !== ERR_NAME_EXISTS) return r;
+        if ((r = spawn.spawnCreep(body, name = namePrefix + randomApprenticeName(), rawOptions)) !== ERR_NAME_EXISTS) return r;
+        if ((r = spawn.spawnCreep(body, name = namePrefix + randomLeaderName(), rawOptions)) !== ERR_NAME_EXISTS) return r;
+        if ((r = spawn.spawnCreep(body, name = namePrefix + randomWarriorName() + _.random(999999999), options)) !== ERR_NAME_EXISTS) return r;
         throw new Error("Creep name exhausted.");
     })();
     return result === OK ? name : result;

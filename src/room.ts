@@ -96,22 +96,31 @@ export function onRoomNextFrame(room: Room): void {
                     expectedCollectors.push(25);
             }
             const expc = Math.max(...expectedCollectors);
-            const actc = roomState.actualCollectors = (collectorCount.normal || 0) + (collectorCount.tall || 0) * 1.5 + (collectorCount.grand || 0) * 2;
+            const actc = roomState.actualCollectors
+                = (collectorCount.normal || 0)
+                + (collectorCount.tall || 0) * 1.2
+                + (collectorCount.grande || 0) * 1.5
+                + (collectorCount.venti || 0) * 2;
             if (actc < expc) {
                 // Spawn collectors if necessary.
                 spawns.remove(trySpawn(spawns, s => {
                     // Try spawn a bigger one first.
-                    // 80%
-                    if (_.random() < 0.8) {
-                        const r = CollectorCreep.spawn(s, "grand");
+                    // 70%
+                    if (_.random() < 0.7) {
+                        const r = CollectorCreep.spawn(s, "venti");
                         if (typeof r === "string") return r;
                     }
-                    // 16% +
-                    if (_.random() < 0.8) {
+                    // 21% +
+                    if (_.random() < 0.7) {
+                        const r = CollectorCreep.spawn(s, "grande");
+                        if (typeof r === "string") return r;
+                    }
+                    // 15% +
+                    if (_.random() < 0.7) {
                         const r = CollectorCreep.spawn(s, "tall");
                         if (typeof r === "string") return r;
                     }
-                    // 4% +
+                    // 2% +
                     return CollectorCreep.spawn(s, "normal");
                 }));
             }
@@ -156,7 +165,7 @@ function renderRoomStatus(room: Room): void {
         .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
-        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grand || 0}) (${actc} / [${expc}])`,
+        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${actc} / [${expc}])`,
         cph ? `Controller: ${_(cph).last()}/${cpt} (ETA ${cueta}tks)` : "Controller: Not owned",
         "",
         "Decaying creeps",

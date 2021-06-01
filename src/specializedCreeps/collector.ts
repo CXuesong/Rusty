@@ -1,5 +1,5 @@
 import _ from "lodash/index";
-import { bodyPartArrayToProfile } from "src/utility/creep";
+import { bodyPartArrayToProfile, BodyPartProfile } from "src/utility/creep";
 import { Logger } from "src/utility/logger";
 import { evadeBlockers, evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
@@ -10,7 +10,7 @@ const MIN_COLLECTABLE_DROPPED_ENERGY = 20;
 const MAX_SOURCE_REGENERATION_WAIT = 20;
 const AGGRESSIVE_UPGRADE_MODE = true;
 
-export type CollectorCreepVariant = "normal" | "tall" | "grand";
+export type CollectorCreepVariant = "normal" | "tall" | "grande" | "venti";
 
 interface CollectorCreepStateBase {
     mode: string;
@@ -243,36 +243,53 @@ export const __internal__debugInfo = {
     getOccupiedDests: () => occupiedDests
 };
 
+const variantDefinitions: Record<CollectorCreepVariant, { body: BodyPartProfile, prefix: string }> = {
+    normal: {
+        prefix: "CN:",
+        // 300
+        body: {
+            [CARRY]: 2,     // 50
+            [MOVE]: 2,      // 50
+            [WORK]: 1,      // 100
+        }
+    },
+    tall: {
+        // 500
+        prefix: "CT:",
+        body: {
+            [CARRY]: 2,
+            [MOVE]: 4,
+            [WORK]: 2,
+        }
+    },
+    grande: {
+        // 800
+        prefix: "CG:",
+        body: {
+            [CARRY]: 2,
+            [MOVE]: 6,
+            [WORK]: 4,
+        }
+    },
+    venti: {
+        // 1200
+        prefix: "CV:",
+        body: {
+            [CARRY]: 4,
+            [MOVE]: 8,
+            [WORK]: 6,
+        }
+    }
+};
+
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
     private pathCache: { targetId: string; targetPath: RoomPosition[] | PathStep[] } | undefined;
     public static spawn(spawn: StructureSpawn, variant?: CollectorCreepVariant): string | SpecializedSpawnCreepErrorCode {
         if (!variant) variant = "normal";
-        const name = spawnCreep(spawn, (() => {
-            if (variant === "normal")
-                // 300
-                return {
-                    [CARRY]: 2,     // 50
-                    [MOVE]: 2,      // 50
-                    [WORK]: 1,      // 100
-                }
-            if (variant === "tall")
-                // 500
-                return {
-                    [CARRY]: 2,
-                    [MOVE]: 4,
-                    [WORK]: 2,
-                }
-            if (variant === "grand")
-                // 800
-                return {
-                    [CARRY]: 2,
-                    [MOVE]: 6,
-                    [WORK]: 4,
-                }
-            throw new RangeError(`Unexpected variant ${variant}.`);
-        })());
+        var def = variantDefinitions[variant];
+        const name = spawnCreep(spawn, def.body, { namePrefix: def.prefix });
         if (typeof name === "string") {
             initializeCreepMemory<CollectorCreepState>(name, CollectorCreep.rustyType, { mode: "idle", nextEvalTime: Game.time });
         }
@@ -322,8 +339,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if (!this._variant) {
             const { creep } = this;
             const body = bodyPartArrayToProfile(creep.body);
-            if (body.move === 4) this._variant = "grand";
-            else if (body.move === 6) this._variant = "tall";
+            if (body.move === 4) this._variant = "tall";
+            else if (body.move === 6) this._variant = "grande";
+            else if (body.move === 8) this._variant = "venti";
             else this._variant = "normal";
         }
         return this._variant;
