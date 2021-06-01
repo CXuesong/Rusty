@@ -1,4 +1,5 @@
 import _ from "lodash/index";
+import { BodyPartProfile, bodyPartProfileToArray } from "src/utility/creep";
 import { Logger } from "src/utility/logger";
 import { buildCreepMemory, SpecializedSpawnCreepErrorCode } from "./base";
 import { randomApprenticeName, randomLeaderName, randomWarriorName } from "./nameGenerator";
@@ -17,9 +18,9 @@ export function initializeCreepMemory<TState extends Record<string, any> = {}>(c
 }
 
 export function spawnCreep(spawn: StructureSpawn,
-    body: BodyPartConstant[] | Partial<Record<BodyPartConstant, number>>,
+    body: BodyPartConstant[] | BodyPartProfile,
     options?: SpawnOptions): string | SpecializedSpawnCreepErrorCode {
-    if (!Array.isArray(body)) body = _(body).flatMap((count, part) => _(count).times(() => part as BodyPartConstant)).value();
+    if (!Array.isArray(body)) body = bodyPartProfileToArray(body);
     if (spawn.spawning) {
         logger.warning(`spawnCreep: Spawn ${spawn.name} is currently spawning ${spawn.spawning.name} (ETA ${spawn.spawning.remainingTime} ticks).`);
         return ERR_BUSY;

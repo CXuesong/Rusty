@@ -1,4 +1,5 @@
 import _ from "lodash/index";
+import { bodyPartArrayToProfile } from "src/utility/creep";
 import { Logger } from "src/utility/logger";
 import { evadeBlockers, evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
@@ -6,7 +7,10 @@ import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
 
 const MIN_COLLECTABLE_DROPPED_ENERGY = 20;
+const MAX_SOURCE_REGENERATION_WAIT = 20;
 const AGGRESSIVE_UPGRADE_MODE = true;
+
+export type CollectorCreepVariant = "normal" | "tall" | "grand";
 
 interface CollectorCreepStateBase {
     mode: string;
@@ -243,7 +247,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
     private pathCache: { targetId: string; targetPath: RoomPosition[] | PathStep[] } | undefined;
-    public static spawn(spawn: StructureSpawn, variant?: "normal" | "tall" | "grand"): string | SpecializedSpawnCreepErrorCode {
+    public static spawn(spawn: StructureSpawn, variant?: CollectorCreepVariant): string | SpecializedSpawnCreepErrorCode {
         if (!variant) variant = "normal";
         const name = spawnCreep(spawn, (() => {
             if (variant === "normal")
@@ -313,6 +317,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         super.dispose();
     }
+    private _variant: CollectorCreepVariant | undefined;
+    public get variant() {
+        if (!this._variant) {
+            const { creep } = this;
+            const body = bodyPartArrayToProfile(creep.body);
+            if (body.move === 4) this._variant = "grand";
+            else if (body.move === 6) this._variant = "tall";
+            else this._variant = "normal";
+        }
+        return this._variant;
+    }
     private transitCollect(): boolean {
         const { creep } = this;
         const { room } = creep;
@@ -342,8 +357,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             filter: t => t.store.energy >= MIN_COLLECTABLE_DROPPED_ENERGY && t.ticksToDecay >= 3
                 && !reachedMaxPeers(t.id, 2)
         });
-        const sources = room.find(FIND_SOURCES_ACTIVE, {
-            filter: t => t.energy >= 50 || t.energyCapacity >= 100 && t.ticksToRegeneration <= 20
+        const sources = room.find(FIND_SOURCES, {
+            filter: t => t.energy >= 30 || t.energyCapacity >= 100 && t.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT
                 // Allow queuing up
                 && !reachedMaxPeers(t.id, 10)
         });
@@ -703,7 +718,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             return;
         }
         if (result === ERR_NOT_ENOUGH_RESOURCES) {
-            if (dest instanceof Source && dest.ticksToRegeneration > 10)
+            if (dest instanceof Source && dest.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT)
                 creep.say("Wait Regn");
             else
                 this.transitCollect() || this.transitIdle();

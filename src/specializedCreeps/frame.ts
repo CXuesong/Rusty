@@ -13,16 +13,15 @@ knownCreepTypes.push(
 
 function houseKeeping() {
     // Delete leaked creep memory.
-    // Not necessary: Game has already done that for us.
-    // const deleted: string[] = [];
-    // for (const k of Object.keys(Memory.creeps)) {
-    //     if (!(k in Game.creeps)) {
-    //         deleted.push(k);
-    //         delete Memory.creeps[k];
-    //     }
-    // }
-    // if (deleted.length)
-    //     logger.info(`houseKeeping: deleted ${deleted.length} creep memory: ${deleted}.`);
+    const deleted: string[] = [];
+    for (const k of Object.keys(Memory.creeps)) {
+        if (!(k in Game.creeps)) {
+            deleted.push(k);
+            delete Memory.creeps[k];
+        }
+    }
+    if (deleted.length)
+        logger.info(`houseKeeping: deleted ${deleted.length} creep memory: ${deleted}.`);
 }
 
 let nextHouseKeepingTime = 0;

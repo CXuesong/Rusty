@@ -1,16 +1,31 @@
 import _ from "lodash";
 import { trySpawn } from "./spawn";
 import { isSpecializedCreepOf } from "./specializedCreeps";
-import { CollectorCreep } from "./specializedCreeps/collector";
+import { CollectorCreep, CollectorCreepVariant } from "./specializedCreeps/collector";
 import { DefenderCreep } from "./specializedCreeps/defender";
+import { getSpecializedCreep } from "./specializedCreeps/registry";
 import { Logger } from "./utility/logger";
+import { visualTextMultiline } from "./utility/visual";
+
+const CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE = 2000;
 
 interface RustyRoomMemory {
     nextSpawnTime?: number;
 }
 
+interface RoomTransientState {
+    decayingCreeps?: Id<Creep>[];
+    expectedCollectors?: number[];
+    actualCollectors?: number;
+    collectorCreepCount?: Partial<Record<CollectorCreepVariant, number>>;
+    defenderCount?: number;
+    controllerProgressHistory?: number[];
+    controllerProgressTotal?: number;
+    controllerUpgradeEta?: number;
+}
+
 const logger = new Logger("Rusty.Room");
-const populationIndicatorText = new Map<string, string>();
+const roomStateDict: Record<string, RoomTransientState> = {};
 
 export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
     var hostiles = room.find(FIND_HOSTILE_CREEPS);
@@ -32,23 +47,29 @@ export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
 
 export function onRoomNextFrame(room: Room): void {
     if (typeof room.memory.rusty !== "object") room.memory.rusty = {};
+    const roomState = roomStateDict[room.name] || (roomStateDict[room.name] = {});
     const rusty = room.memory.rusty as RustyRoomMemory;
     const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } }) as StructureTower[];
-    if (towers.length)
-        onTowersNextFrame(room, towers);
+    const { controller } = room;
+    if (towers.length) onTowersNextFrame(room, towers);
     const { nextSpawnTime } = rusty;
     if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
         rusty.nextSpawnTime = Game.time + _.random(3, 10);
         // Find available spawns.
         const spawns = room.find(FIND_MY_SPAWNS, { filter: s => !s.spawning });
         if (spawns.length) {
-            const { controller } = room;
             const sources = room.find(FIND_SOURCES_ACTIVE);
             const creeps = room.find(FIND_MY_CREEPS);
             const defenders = _(creeps).filter(c => isSpecializedCreepOf(c, DefenderCreep)).size();
-            const collectors = _(creeps).filter(c => isSpecializedCreepOf(c, CollectorCreep)).size();
+            const collectors = _(creeps)
+                .filter(c => isSpecializedCreepOf(c, CollectorCreep))
+                .map(c => getSpecializedCreep(c, CollectorCreep)!).value();
+            const collectorCount: Partial<Record<CollectorCreepVariant, number>>
+                = roomState.collectorCreepCount
+                = _(collectors).groupBy(c => c.variant).mapValues(g => g.length).value();
+            roomState.defenderCount = defenders;
             // Do not need to spawn defender under safe mode, or when there is tower.
-            if (!towers.length && collectors >= 1 && (!controller?.safeMode || controller.safeMode < 1500)) {
+            if (!towers.length && collectors.length >= 1 && (!controller?.safeMode || controller.safeMode < 1500)) {
                 if (defenders < 1) {
                     // Note: if you spawn twice, only the last spawn will be kept.
                     spawns.remove(trySpawn(spawns, s => DefenderCreep.spawn(s)));
@@ -59,7 +80,7 @@ export function onRoomNextFrame(room: Room): void {
                     }
                 }
             }
-            const expectedCollectors = [2,
+            const expectedCollectors = roomState.expectedCollectors = [2,
                 spawns.length * 3
                 + sources.length * 8
                 + (controller?.my ? 8 : 0)
@@ -75,50 +96,81 @@ export function onRoomNextFrame(room: Room): void {
                     expectedCollectors.push(25);
             }
             const expc = Math.max(...expectedCollectors);
-            if (collectors < expc) {
+            const actc = roomState.actualCollectors = (collectorCount.normal || 0) + (collectorCount.tall || 0) * 1.5 + (collectorCount.grand || 0) * 2;
+            if (actc < expc) {
                 // Spawn collectors if necessary.
                 spawns.remove(trySpawn(spawns, s => {
                     // Try spawn a bigger one first.
-                    const rand = _.random();
-                    // 40%
-                    if (rand < 0.4) {
+                    // 80%
+                    if (_.random() < 0.8) {
                         const r = CollectorCreep.spawn(s, "grand");
                         if (typeof r === "string") return r;
                     }
-                    // 40% +
-                    if (rand < 0.7) {
+                    // 16% +
+                    if (_.random() < 0.8) {
                         const r = CollectorCreep.spawn(s, "tall");
                         if (typeof r === "string") return r;
                     }
-                    // 20% +
+                    // 4% +
                     return CollectorCreep.spawn(s, "normal");
                 }));
             }
-
-            // Update room indicator
-            const decayingCreeps = _(creeps).sortBy(c => c.ticksToLive)
-                .take(5).map(c => `  ${c.name}\t${c.ticksToLive}tks`)
-                .join("\n");
-            populationIndicatorText.set(room.name, `
-Defenders: ${defenders}
-Collectors: ${collectors}/[${expectedCollectors}].
-Decaying creeps
-${decayingCreeps}
-`.trim());
         }
     }
+    // Update room indicator
+    if (Game.time % 20 === 0) {
+        const creeps = room.find(FIND_MY_CREEPS);
+        const decayingCreeps = _(creeps).sortBy(c => c.ticksToLive).take(5).map(c => c.id).value();
+        roomState.decayingCreeps = decayingCreeps;
+    }
+    if (controller?.my) {
+        const cph = roomState.controllerProgressHistory || (roomState.controllerProgressHistory = []);
+        cph.push(controller.progress);
+        if (cph.length >= CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE) {
+            cph.splice(0, Math.ceil(cph.length - CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE / 2));
+        }
+        roomState.controllerProgressTotal = controller.progressTotal;
+        roomState.controllerUpgradeEta = cph.length >= 3
+            ? Math.round((controller.progressTotal - controller.progress) / ((cph[cph.length - 1] - cph[0]) / (cph.length - 1)))
+            : undefined;
+    } else {
+        delete roomState.controllerProgressHistory;
+        delete roomState.controllerProgressTotal;
+        delete roomState.controllerUpgradeEta;
+    }
+}
+
+function renderRoomStatus(room: Room): void {
+    const {
+        defenderCount: dc = "",
+        collectorCreepCount: ccc = {},
+        expectedCollectors: expc,
+        actualCollectors: actc,
+        decayingCreeps,
+        controllerProgressHistory: cph,
+        controllerProgressTotal: cpt,
+        controllerUpgradeEta: cueta,
+    } = roomStateDict[room.name] || {};
+    const decayingCreepsExpr = _(decayingCreeps)
+        .map(dc => Game.getObjectById(dc)).filter()
+        .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
+    visualTextMultiline(room, [
+        `Defenders: ${dc}`,
+        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grand || 0}) (${actc} / [${expc}])`,
+        cph ? `Controller: ${_(cph).last()}/${cpt} (ETA ${cueta}tks)` : "Controller: Not owned",
+        "",
+        "Decaying creeps",
+        ...decayingCreepsExpr
+    ],
+        1, 1, { align: "left", opacity: 0.4 }
+    )
 }
 
 export function onNextFrame(): void {
     for (const room of _(Game.rooms).values()) {
         try {
             onRoomNextFrame(room);
-            const populationIndicator = populationIndicatorText.get(room.name);
-            if (populationIndicator) {
-                populationIndicator.split("\n").forEach((l, i) =>
-                    room.visual.text(l, 1, 1 + i, { align: "left", opacity: 0.4 })
-                );
-            }
+            renderRoomStatus(room);
         } catch (err) {
             logger.error(`onNextFrame failed in ${room}.`, err);
         }
