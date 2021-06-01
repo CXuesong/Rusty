@@ -1,7 +1,7 @@
 import _ from "lodash/index";
 import { bodyPartArrayToProfile, BodyPartProfile } from "src/utility/creep";
 import { Logger } from "src/utility/logger";
-import { evadeBlockers, evadeHostileCreeps, findNearestPath } from "src/utility/pathFinder";
+import { buildRoomCostMatrix, findNearestPath } from "src/utility/pathFinder";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
@@ -24,15 +24,20 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
 }
 
 type CollectorCreepCollectDestType = Source | Tombstone | Resource | Creep;
-type CollectorCreepDistributeDestType
-    = StructureController
-    | ConstructionSite
+// General structure: has hit point, may store energy.
+type CollectorCreepDistributeStructureType =
     | StructureSpawn
     | StructureExtension
     | StructureTower
     | StructureRampart
     | StructureRoad
-    | StructureWall;
+    | StructureWall
+    | StructureContainer
+    | StructureStorage;
+type CollectorCreepDistributeDestType =
+    | ConstructionSite
+    | StructureController
+    | CollectorCreepDistributeStructureType;
 
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
     mode: "collect";
@@ -67,34 +72,9 @@ interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
     nextEvalTime: number;
 }
 
-interface CollectorCreepStateDistributeSpawn extends CollectorCreepStateDistribute {
-    spawnId: Id<StructureSpawn>;
-    destId: Id<StructureSpawn>;
-}
-
-interface CollectorCreepStateDistributeTower extends CollectorCreepStateDistribute {
-    towerId: Id<StructureTower>;
-    destId: Id<StructureTower>;
-}
-
-interface CollectorCreepStateDistributeExtension extends CollectorCreepStateDistribute {
-    extensionId: Id<StructureExtension>;
-    destId: Id<StructureExtension>;
-}
-
-interface CollectorCreepStateDistributeRampart extends CollectorCreepStateDistribute {
-    rampartId: Id<StructureRampart>;
-    destId: Id<StructureRampart>;
-}
-
-interface CollectorCreepStateDistributeWall extends CollectorCreepStateDistribute {
-    wallId: Id<StructureWall>;
-    destId: Id<StructureWall>;
-}
-
-interface CollectorCreepStateDistributeRoad extends CollectorCreepStateDistribute {
-    roadId: Id<StructureRoad>;
-    destId: Id<StructureRoad>;
+interface CollectorCreepStateDistributeStructure extends CollectorCreepStateDistribute {
+    structureId: Id<CollectorCreepDistributeStructureType>;
+    destId: Id<CollectorCreepDistributeStructureType>;
 }
 
 interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
@@ -113,12 +93,7 @@ export type CollectorCreepState
     | CollectorCreepStateCollectTombstone
     | CollectorCreepStateCollectResource
     | CollectorCreepStateCollectCreepRelay
-    | CollectorCreepStateDistributeSpawn
-    | CollectorCreepStateDistributeTower
-    | CollectorCreepStateDistributeExtension
-    | CollectorCreepStateDistributeRampart
-    | CollectorCreepStateDistributeWall
-    | CollectorCreepStateDistributeRoad
+    | CollectorCreepStateDistributeStructure
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
 
@@ -361,9 +336,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.logger.warning(`Unable to check room ${roomName}.`);
                 return false;
             }
-            const costs = new PathFinder.CostMatrix();
-            evadeBlockers(room, costs);
-            evadeHostileCreeps(room, costs);
+            const costs = buildRoomCostMatrix(room);
             costs.set(creep.pos.x, creep.pos.y, 0);
             return costs;
         }
@@ -382,11 +355,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             ) && !reachedMaxPeers(t.id, 2)
         });
         const sources = room.find(FIND_SOURCES, {
-            filter: t => t.energy >= MIN_COLLECTABLE_ENERGY
+            filter: t => (t.energy >= MIN_COLLECTABLE_ENERGY
                 || t.energy >= MIN_COLLECTABLE_ENERGY_NEAR && creep.pos.inRangeTo(t, 2)
                 || t.energyCapacity >= 100 && t.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT
                 // Allow queuing up
-                && !reachedMaxPeers(t.id, 10)
+            ) && !reachedMaxPeers(t.id, 10)
         });
         // We allow stealing energy from existing collecting creeps,
         // only if they have already collected some energy.
@@ -453,7 +426,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         return true;
     }
     private transitDistribute(): boolean {
-        type TTargetStructre = StructureSpawn | StructureExtension | StructureTower | StructureRampart;
         const { creep, state } = this;
         if (!creep.store.energy) return false;
         const { room } = creep;
@@ -468,15 +440,25 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.logger.warning(`Unable to check room ${roomName}.`);
                 return false;
             }
-            const costs = costMatrix || new PathFinder.CostMatrix();
-            evadeBlockers(room, costs);
-            evadeHostileCreeps(room, costs);
+            // We ignore provided costMatrix completely.
+            const costs = buildRoomCostMatrix(room);
             costs.set(creep.pos.x, creep.pos.y, 0);
             return costs;
         };
+        const canTransferEnergyToStructure = (s: CollectorCreepDistributeStructureType): boolean => {
+            if (!("store" in s)) return false;
+            const freeCap = s.store.getFreeCapacity(RESOURCE_ENERGY);
+            const minFreeCap = s instanceof StructureSpawn ? 5 : 0;
+            if (freeCap < minFreeCap) return false;
+            const targetingCollectors = getTargetingCollectors(s.id);
+            // Traffic control.
+            if (targetingCollectors.size >= 6) return false;
+            const incomingEnergy = _([...targetingCollectors]).map(id => Game.getObjectById(id)?.store.energy || 0).sum();
+            return incomingEnergy < freeCap;
+        }
         if (state.mode === "distribute") {
             // Keep incremental state update if current is already in distribute state.
-            const reEvaluatePath = (target: StructureController | ConstructionSite | TTargetStructre) => {
+            const reEvaluatePath = (target: StructureController | ConstructionSite | CollectorCreepDistributeStructureType) => {
                 this.pathCache = {
                     targetId: target.id,
                     targetPath: creep.pos.findPathTo(target.pos, {
@@ -497,8 +479,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     reEvaluatePath(s);
                     return true;
                 }
-            } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state) {
-                const st = Game.getObjectById(state.destId as Id<StructureSpawn | StructureExtension | StructureTower | StructureRampart>);
+            } else if ("structureId" in state) {
+                const st = Game.getObjectById(state.structureId);
                 const minFreeCap = st instanceof StructureSpawn ? 10 : 0;
                 if (st && ("store" in st && st.store.getFreeCapacity(RESOURCE_ENERGY) > minFreeCap || structureNeedsRepair(st))) {
                     reEvaluatePath(st);
@@ -510,24 +492,20 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             filter: s => s.structureType === STRUCTURE_EXTENSION && s.my
                 || s.structureType === STRUCTURE_TOWER && s.my
                 || s.structureType === STRUCTURE_RAMPART && s.my
+                || s.structureType === STRUCTURE_SPAWN && s.my
                 || s.structureType === STRUCTURE_ROAD
                 || s.structureType === STRUCTURE_WALL
+                || s.structureType === STRUCTURE_CONTAINER
+                || s.structureType === STRUCTURE_STORAGE
         }))
-            .map(s => {
-                const c = getTargetingCollectors(s.id);
-                return {
-                    structure: s as TTargetStructre,
-                    needsRepair: structureNeedsRepair(s),
-                    storeVacancy: "store" in s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
-                    peers: c.size - (c.has(this.id) ? 1 : 0),
-                }
-            })
+            .map(s => ({
+                structure: s as CollectorCreepDistributeStructureType,
+                needsRepair: structureNeedsRepair(s),
+                storeVacancy: "store" in s && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0,
+            }))
             .filter(e => !!e.needsRepair || e.storeVacancy)
             .value();
-        // Normally, we consider structures in urgent need of fixing, and with vacant store.
-        const normalStructureTargets = structures.filter(e => e.needsRepair === "now" || e.storeVacancy);
         const towers = structures.filter((s) => s.structure instanceof StructureTower);
-        const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
         const { controller } = room;
         let controllerPriority: number;
         if (controller?.my) {
@@ -546,16 +524,25 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         const nextEvalTime = Game.time + _.random(4, 10);
         if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {
-            const spawns = room.find(FIND_MY_SPAWNS, { filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
+
             let goals;
             if (towers.length && _(towers).map(t => creep.pos.getRangeTo(t.structure)).min()! < 20) {
-                // Feeding tower is priority.
-                goals = towers.map(e => e.structure) as TTargetStructre[];
+                // Feeding tower is top priority.
+                goals = towers.map(e => e.structure) as CollectorCreepDistributeStructureType[];
             } else {
+                // We consider structures in urgent need of fixing first.
+                const priorityStructures = structures.filter(s => (
+                    s.structure instanceof StructureSpawn
+                    || s.structure instanceof StructureExtension
+                ) && canTransferEnergyToStructure(s.structure)).map(s => s.structure);
+                const fixableStructures = structures
+                    .filter(e => e.needsRepair === "now" && getTargetingCollectors(e.structure.id).size < 6)
+                    .map(e => e.structure);
+                const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
                 goals = [
+                    ...priorityStructures,
+                    ...fixableStructures,
                     ...constructionSites,
-                    ...normalStructureTargets.map(e => e.structure) as TTargetStructre[],
-                    ...spawns
                 ];
             }
             let nearest = findNearestPath<CollectorCreepDistributeDestType>(creep.pos, goals, { maxRooms: 1, roomCallback: roomCallback });
@@ -563,45 +550,32 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 // No goal.
                 this.logger.info(`transitDistribute: No primary goal.`);
                 // Try some no-so-urgent stuff
-                const fixableStructures = structures.filter(e => e.needsRepair === "yes");
-                const laterFixableStructures = structures.filter(e => e.needsRepair === "later");
-                if ((fixableStructures.length && !laterFixableStructures.length || _.random() < 0.7)
-                    // use "=" by design
-                    && (nearest = findNearestPath(creep.pos, fixableStructures.map(e => e.structure), { maxRooms: 1, roomCallback: roomCallback }))) {
-                    this.logger.info(`transitDistribute: Found fixable goal.`);
-                } else if (laterFixableStructures.length
-                    && (nearest = findNearestPath(creep.pos,
-                        _(laterFixableStructures)
-                            .map(e => e.structure)
-                            .sampleSize(Math.max(2, laterFixableStructures.length / 4))
-                            .value(), {
-                        maxRooms: 1,
-                        roomCallback: roomCallback
-                    }))) {
-                    this.logger.info(`transitDistribute: Found low-pri fixable goal.`);
-                } else {
-                    return false;
+                let targetGroups: [label: string, possibility: number, psum: number, structures: { structure: CollectorCreepDistributeStructureType }[]][] = [
+                    ["energy sink", 0.4, -1, structures.filter(e => canTransferEnergyToStructure(e.structure))],
+                    ["fixable structure", 0.4, -1, structures.filter(e => e.needsRepair === "yes")],
+                    ["low-pri fixable structure", 0.2, -1, _(structures).filter(e => e.needsRepair === "later").sampleSize(10).value()],
+                ];
+                targetGroups = targetGroups.filter(([, , , sts]) => !sts.length);
+                while (targetGroups.length) {
+                    let possibilitySum = 0;
+                    for (const group of targetGroups) {
+                        possibilitySum = group[2] = possibilitySum + group[1];
+                    }
+                    const pos = _.random() * possibilitySum;
+                    const group = _(targetGroups).findLast(([, , ps]) => ps <= pos) || _(targetGroups).last()!;
+                    const [name, , , sts] = group;
+                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), { maxRooms: 1, roomCallback: roomCallback });
+                    if (nearest) {
+                        this.logger.info(`transitDistribute: Found secondary goal (${name}).`);
+                    } else {
+                        targetGroups.remove(group);
+                    }
                 }
+                if (!nearest) return false;
             }
             const destId = nearest.goal.id as Id<any>;
             this.logger.info(`Distribute ${nearest.goal}.`);
-            if (nearest.goal instanceof StructureSpawn) {
-                this.state = { mode: "distribute", spawnId: nearest.goal.id, destId, nextEvalTime };
-            }
-            else if (nearest.goal instanceof ConstructionSite) {
-                this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
-            } else if (nearest.goal instanceof StructureExtension) {
-                this.state = { mode: "distribute", extensionId: nearest.goal.id, destId, nextEvalTime };
-            } else if (nearest.goal instanceof StructureTower) {
-                this.state = { mode: "distribute", towerId: nearest.goal.id, destId, nextEvalTime };
-            } else if (nearest.goal instanceof StructureRampart) {
-                this.state = { mode: "distribute", rampartId: nearest.goal.id, destId, nextEvalTime };
-            } else if (nearest.goal instanceof StructureWall) {
-                this.state = { mode: "distribute", wallId: nearest.goal.id, destId, nextEvalTime };
-            } else if (nearest.goal instanceof StructureRoad) {
-                this.state = { mode: "distribute", roadId: nearest.goal.id, destId, nextEvalTime };
-            } else
-                throw new Error("Unexpected code path.");
+            this.state = { mode: "distribute", structureId: nearest.goal.id as Id<any>, destId, nextEvalTime };
             this.pathCache = { targetId: destId, targetPath: nearest.path };
             return true;
         }
@@ -761,8 +735,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
-        } else if ("spawnId" in state || "extensionId" in state || "towerId" in state || "rampartId" in state || "wallId" in state || "roadId" in state) {
-            const st = dest = Game.getObjectById(state.destId as Id<StructureSpawn | StructureExtension | StructureTower | StructureRampart>);
+        } else if ("structureId" in state) {
+            const st = dest = Game.getObjectById(state.structureId);
             if (!st) {
                 result = undefined
             } else {

@@ -20,11 +20,11 @@ export class ConsoleUtils {
 
     public static help = ConsoleUtils.dir;
 
-    public static rebuildSpecializedCreepsMemory(): void {
+    public static rebuildSpecializedCreepsMemory(mode?: "force"): void {
         const rebuiltNames: string[] = [];
         const missedNames: string[] = [];
         for (const v of _(Game.creeps).values()) {
-            if (v.memory?.rustyType) continue;
+            if (mode !== "force" && v.memory?.rustyType) continue;
             const body = _(v.body).groupBy(e => e.type).mapValues(e => e.length).value() as Partial<Record<BodyPartConstant, number>>;
             if (body.move && body.carry)
                 initializeCreepMemory<CollectorCreepState>(v.name, CollectorCreep.rustyType, { mode: "idle", nextEvalTime: Game.time });
