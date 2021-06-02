@@ -10,6 +10,12 @@ export const enum LogLevel {
 export const loggerLevels: (readonly [match: string | RegExp, level: LogLevel])[] = [
 ];
 
+let loggerLevelCacheToken = 0;
+
+export function purgeLoggerLevelCache() {
+    loggerLevelCacheToken++;
+}
+
 function getLevelExpr(level: LogLevel): string {
     switch (level) {
         case LogLevel.trace: return "TRACE";
@@ -29,10 +35,11 @@ function formatMessageArg(arg: unknown): string {
 
 export class Logger {
     private minLevel: LogLevel | "init" | undefined = "init";
+    private _minLevelCacheToken = loggerLevelCacheToken;
     public constructor(public readonly name: string) {
     }
     public log(level: LogLevel, ...message: unknown[]) {
-        if (this.minLevel === "init") {
+        if (this._minLevelCacheToken !== loggerLevelCacheToken || this.minLevel === "init") {
             // Lazy evaluation log level.
             const matchedEntry = _(loggerLevels).findLast(([m, l]) => {
                 if (typeof m === "string") {
@@ -41,6 +48,7 @@ export class Logger {
                 return !!this.name.match(m);
             });
             this.minLevel = matchedEntry?.[1];
+            this._minLevelCacheToken = loggerLevelCacheToken;
         }
         if (this.minLevel == null || level >= this.minLevel) {
             console.log(`[${this.name}][${getLevelExpr(level)}] ${message.map(m => formatMessageArg(m)).join(" ")}`);

@@ -3,7 +3,7 @@ import { CollectorCreep, CollectorCreepState, structureNeedsRepair, __internal__
 import { DefenderCreep, DefenderCreepState } from "src/specializedCreeps/defender";
 import { __internal__getSpecializedCreepsCache } from "src/specializedCreeps/registry";
 import { initializeCreepMemory } from "src/specializedCreeps/spawn";
-import { Logger, loggerLevels, LogLevel } from "./logger";
+import { Logger, loggerLevels, LogLevel, purgeLoggerLevelCache } from "./logger";
 
 const logger = new Logger("Rusty.Utility.Console");
 
@@ -104,10 +104,12 @@ export class ConsoleUtils {
             const trackEntries = loggerLevels.filter(e => (e as any)[ConsoleUtils.trackCreepLogLevelSymbol]);
             for (const e of trackEntries) loggerLevels.remove(e);
             console.log(`Removed ${trackEntries.length} entries.`);
+            purgeLoggerLevelCache();
             return;
         }
         const entry = [new RegExp(`^Rusty\\.SpecializedCreeps\\.\\w+\\.#${creepName}$`), LogLevel.trace] as const;
         (entry as any)[ConsoleUtils.trackCreepLogLevelSymbol] = true;
         loggerLevels.push(entry);
+        purgeLoggerLevelCache();
     }
 }

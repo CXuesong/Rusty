@@ -37,7 +37,7 @@ export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
         logger.warning(message);
     }
     for (const tower of towers) {
-        if (hostiles.length && (!healable.length || _.random() < 0.7)) {
+        if (hostiles.length && (!healable.length || _.random(true) < 0.7)) {
             const target = _(hostiles).sample()!;
             tower.attack(target);
             continue;
@@ -111,17 +111,17 @@ export function onRoomNextFrame(room: Room): void {
                 spawns.remove(trySpawn(spawns, s => {
                     // Try spawn a bigger one first.
                     // 70%
-                    if (_.random() < 0.7) {
+                    if (_.random(true) < 0.7) {
                         const r = CollectorCreep.spawn(s, "venti");
                         if (typeof r === "string") return r;
                     }
                     // 21% +
-                    if (_.random() < 0.7) {
+                    if (_.random(true) < 0.7) {
                         const r = CollectorCreep.spawn(s, "grande");
                         if (typeof r === "string") return r;
                     }
                     // 15% +
-                    if (_.random() < 0.7) {
+                    if (_.random(true) < 0.7) {
                         const r = CollectorCreep.spawn(s, "tall");
                         if (typeof r === "string") return r;
                     }

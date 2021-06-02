@@ -399,8 +399,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 })
                 .value();
             // Also take a look at the storage at this point, before wandering away.
+            // TODO schedule a proper storage-taking behavior.
             const storage = room.storage && room.storage.store.energy > creep.store.getCapacity(RESOURCE_ENERGY) * 0.8
-                ? [room.storage] : [];
+                ? [/* room.storage */] : [];
             const secondary = collectingCreeps.length
                 ? findNearestPath(creep.pos, [
                     ...storage,
@@ -585,24 +586,26 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 // No goal.
                 this.logger.info(`transitDistribute: No primary goal.`);
                 // Try some no-so-urgent stuff
-                let targetGroups: [label: string, possibility: number, psum: number, structures: { structure: CollectorCreepDistributeStructureType }[]][] = [
-                    ["energy sink", 4, -1, structures.filter(e =>
+                let targetGroups: [label: string, possibility: number, structures: { structure: CollectorCreepDistributeStructureType }[]][] = [
+                    ["energy sink", 3, structures.filter(e =>
                         e.structure.structureType !== STRUCTURE_STORAGE
                         && e.structure.structureType !== STRUCTURE_CONTAINER
                         && canTransferEnergyToStructure(e.structure))],
-                    ["fixable structure", 4, -1, structures.filter(e => e.needsRepair === "yes")],
-                    ["low-pri fixable structure", 1, -1, _(structures).filter(e => e.needsRepair === "later").sampleSize(10).value()],
-                    ["energy storage", 1, -1, structures.filter(e => e.structure.structureType == STRUCTURE_STORAGE)],
+                    ["fixable structure", 4, structures.filter(e => e.needsRepair === "yes")],
+                    ["low-pri fixable structure", 2, _(structures).filter(e => e.needsRepair === "later").sampleSize(10).value()],
+                    ["energy storage", 1, structures.filter(e => e.structure.structureType == STRUCTURE_STORAGE)],
                 ];
-                targetGroups = targetGroups.filter(([, , , sts]) => sts.length);
+                targetGroups = targetGroups.filter(([, , sts]) => sts.length);
                 while (targetGroups.length) {
-                    let possibilitySum = 0;
-                    for (const group of targetGroups) {
-                        possibilitySum = group[2] = possibilitySum + group[1];
+                    const possibilityCumSum = [0];
+                    for (const [, pos] of targetGroups) {
+                        possibilityCumSum.push(_(possibilityCumSum).last()! + pos);
                     }
-                    const pos = _.random() * possibilitySum;
-                    const group = _(targetGroups).findLast(([, , ps]) => ps <= pos) || _(targetGroups).last()!;
-                    const [name, , , sts] = group;
+                    const pos = _.random(true) * _(possibilityCumSum).last()!;
+                    const groupIndex = _.range(0, targetGroups.length).find(i => possibilityCumSum[i] <= pos && possibilityCumSum[i + 1] > pos);
+                    const group = targetGroups[groupIndex ?? 0];
+                    const [name, , sts] = group;
+                    // this.logger.warning(`${pos}/${_(possibilityCumSum).last()!} --> ${targetGroups.map(g => `${g[0]}: ${g[1]}`)} --> ${group[0]}`);
                     nearest = findNearestPath(creep.pos, sts.map(s => s.structure), {
                         maxRooms: 1,
                         roomCallback: roomCallback,
@@ -610,7 +613,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                         swampCost: 6,
                     });
                     if (nearest) {
-                        this.logger.info(`transitDistribute: Found secondary goal (${name}).`);
+                        this.logger.warning(`transitDistribute: Found secondary goal (${name}).`);
                         break;
                     } else {
                         targetGroups.remove(group);
