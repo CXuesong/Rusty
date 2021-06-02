@@ -380,7 +380,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             plainCost: 2,
             swampCost: 6,
         });
-        this.logger.warning(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
+        this.logger.info(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
         if (!nearest || nearest.cost > 10) {
             // If every direct source is too far away...
             // We allow stealing energy from existing collecting creeps,
@@ -412,7 +412,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     swampCost: 6,
                 })
                 : undefined;
-            this.logger.warning(`transitCollect: Secondary target: ${secondary?.goal}, cost ${secondary?.cost}.`);
+            this.logger.info(`transitCollect: Secondary target: ${secondary?.goal}, cost ${secondary?.cost}.`);
             if (!nearest || secondary && nearest.cost - secondary.cost > 10)
                 nearest = secondary;
         }
@@ -555,7 +555,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         const nextEvalTime = Game.time + _.random(4, 10);
         if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {
-
             let goals;
             if (towers.length && _(towers).map(t => creep.pos.getRangeTo(t.structure)).min()! < 20) {
                 // Feeding tower is top priority.
@@ -595,7 +594,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     ["low-pri fixable structure", 1, -1, _(structures).filter(e => e.needsRepair === "later").sampleSize(10).value()],
                     ["energy storage", 1, -1, structures.filter(e => e.structure.structureType == STRUCTURE_STORAGE)],
                 ];
-                targetGroups = targetGroups.filter(([, , , sts]) => !sts.length);
+                targetGroups = targetGroups.filter(([, , , sts]) => sts.length);
                 while (targetGroups.length) {
                     let possibilitySum = 0;
                     for (const group of targetGroups) {
@@ -612,6 +611,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     });
                     if (nearest) {
                         this.logger.info(`transitDistribute: Found secondary goal (${name}).`);
+                        break;
                     } else {
                         targetGroups.remove(group);
                     }
