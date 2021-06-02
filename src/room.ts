@@ -170,7 +170,7 @@ function renderRoomStatus(room: Room): void {
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
         `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${actc} / [${expc}])`,
-        cph ? `Controller: ${_(cph).last()}/${cpt} (ETA ${cueta}tks)` : "Controller: Not owned",
+        cph ? `Controller: ${_(cph).last()}/${cpt} (${cph && cpt && Math.round(_(cph).last()! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
         "",
         "Decaying creeps",
         ...decayingCreepsExpr

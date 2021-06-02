@@ -313,7 +313,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public dispose() {
         const { state } = this;
         if (this.disposed) return;
-        if (state.mode === "collect" && "destId" in state) {
+        if ((state.mode === "collect" || state.mode === "distribute") && "destId" in state) {
             removeTargetingCollector(state.destId, this.id);
         }
         super.dispose();
