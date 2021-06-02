@@ -9,6 +9,7 @@ import { initializeCreepMemory, spawnCreep } from "./spawn";
 const MIN_COLLECTABLE_ENERGY = 20;
 const MIN_COLLECTABLE_ENERGY_NEAR = 5;
 const MAX_SOURCE_REGENERATION_WAIT = 20;
+const RANGE_DISTANCE_RATIO = 1.6;
 const AGGRESSIVE_UPGRADE_MODE = true;
 
 export type CollectorCreepVariant = "normal" | "tall" | "grande" | "venti";
@@ -23,7 +24,7 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
     nextEvalTime: number;
 }
 
-type CollectorCreepCollectDestType = Source | Tombstone | Resource | Creep;
+type CollectorCreepCollectDestType = Source | Tombstone | Resource | Creep | StructureStorage;
 // General structure: has hit point, may store energy.
 type CollectorCreepDistributeStructureType =
     | StructureSpawn
@@ -51,10 +52,6 @@ interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
     sourceDistance: 0;
 }
 
-interface CollectorCreepStateCollectTombstone extends CollectorCreepStateCollect {
-    readonly tombstoneId: Id<Tombstone>;
-}
-
 // Resource dropped.
 interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect {
     readonly resourceId: Id<Resource>;
@@ -63,6 +60,11 @@ interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect 
 interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollect {
     readonly sourceCreepId: Id<Creep>;
     sourceDistance: number;
+}
+
+interface CollectorCreepStateCollectStorage extends CollectorCreepStateCollect {
+    readonly storageId: Id<StructureStorage | Tombstone | Ruin>;
+    sourceDistance: 0;
 }
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
@@ -90,9 +92,9 @@ interface CollectorCreepStateDistributeConstruction extends CollectorCreepStateD
 export type CollectorCreepState
     = CollectorCreepStateIdle
     | CollectorCreepStateCollectSource
-    | CollectorCreepStateCollectTombstone
     | CollectorCreepStateCollectResource
     | CollectorCreepStateCollectCreepRelay
+    | CollectorCreepStateCollectStorage
     | CollectorCreepStateDistributeStructure
     | CollectorCreepStateDistributeController
     | CollectorCreepStateDistributeConstruction;
@@ -211,8 +213,14 @@ export function structureNeedsRepair(structure: Structure): "now" | "yes" | "lat
         ? "now" : "yes";
 }
 
-function estimateDecayedResourceAmount(currentPos: RoomPosition, target: Resource) {
-    return Math.floor(target.amount * Math.pow(1 - 1 / ENERGY_DECAY, target.pos.getRangeTo(currentPos) * 1.6));
+function estimateDecayedResourceAmount(currentPos: RoomPosition, target: Resource): number {
+    return Math.floor(target.amount * Math.pow(1 - 1 / ENERGY_DECAY, target.pos.getRangeTo(currentPos) * RANGE_DISTANCE_RATIO));
+}
+
+function isSourceWaitableForRegeneration(currentPos: RoomPosition, target: Source): boolean {
+    // console.log("isSourceWaitableForRegeneration: " + currentPos + " --> " + "target: " + currentPos.getRangeTo(target) * RANGE_DISTANCE_RATIO);
+    return target.energyCapacity >= 100
+        && target.ticksToRegeneration <= Math.max(currentPos.getRangeTo(target) * RANGE_DISTANCE_RATIO, MAX_SOURCE_REGENERATION_WAIT)
 }
 
 export const __internal__debugInfo = {
@@ -356,34 +364,55 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         });
         const sources = room.find(FIND_SOURCES, {
             filter: t => (t.energy >= MIN_COLLECTABLE_ENERGY
-                || t.energy >= MIN_COLLECTABLE_ENERGY_NEAR && creep.pos.inRangeTo(t, 2)
-                || t.energyCapacity >= 100 && t.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT
+                || t.energy >= MIN_COLLECTABLE_ENERGY_NEAR && creep.pos.inRangeTo(t, 1)
+                || isSourceWaitableForRegeneration(creep.pos, t)
                 // Allow queuing up
             ) && !reachedMaxPeers(t.id, 10)
         });
-        // We allow stealing energy from existing collecting creeps,
-        // only if they have already collected some energy.
-        const collectingCreeps = enumSpecializedCreeps(CollectorCreep, room)
-            .filter(c => c !== this
-                && c.state.mode === "collect"
-                && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1)
-                && !reachedMaxPeers(c.id, 1))
-            .map(c => c.creep)
-            .filter(c => c.store.energy / c.store.getCapacity(RESOURCE_ENERGY) >= 0.4)
-            .value();
         // Prefer collect from direct source.
-        let nearest = findNearestPath<Source | Tombstone | Resource | Creep>(creep.pos, [
+        let nearest = findNearestPath<Source | Tombstone | Resource | Creep | StructureStorage>(creep.pos, [
             ...resources,
             ...tombstones,
             ...sources
-        ], { maxRooms: 1, roomCallback });
-        this.logger.trace(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
-        if (!nearest || nearest.cost > 20) {
+        ], {
+            maxRooms: 1,
+            roomCallback,
+            plainCost: 2,
+            swampCost: 6,
+        });
+        this.logger.warning(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
+        if (!nearest || nearest.cost > 10) {
             // If every direct source is too far away...
+            // We allow stealing energy from existing collecting creeps,
+            // only if they have already collected some energy.
+            const collectingCreeps = enumSpecializedCreeps(CollectorCreep, room)
+                .filter(c => c !== this
+                    && c.state.mode === "collect"
+                    && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1)
+                    && !reachedMaxPeers(c.id, 1))
+                .map(c => c.creep)
+                .filter(c => {
+                    // We still need some time to arrive the target creep. Target can collect some more energy meanwhile.
+                    const energyCap = c.store.getCapacity(RESOURCE_ENERGY);
+                    const energyEst = Math.max(energyCap, c.store.energy + creep.pos.getRangeTo(c) * RANGE_DISTANCE_RATIO * c.getActiveBodyparts(WORK));
+                    return energyEst / energyCap >= 0.6 || energyEst / creep.store.getCapacity(RESOURCE_ENERGY) >= 0.8
+                })
+                .value();
+            // Also take a look at the storage at this point, before wandering away.
+            const storage = room.storage && room.storage.store.energy > creep.store.getCapacity(RESOURCE_ENERGY) * 0.8
+                ? [room.storage] : [];
             const secondary = collectingCreeps.length
-                ? findNearestPath(creep.pos, [...collectingCreeps], { maxRooms: 1, roomCallback })
+                ? findNearestPath(creep.pos, [
+                    ...storage,
+                    ...collectingCreeps
+                ], {
+                    maxRooms: 1,
+                    roomCallback,
+                    plainCost: 2,
+                    swampCost: 6,
+                })
                 : undefined;
-            this.logger.trace(`transitCollect: Secondary target: ${nearest?.goal}, cost ${nearest?.cost}.`);
+            this.logger.warning(`transitCollect: Secondary target: ${secondary?.goal}, cost ${secondary?.cost}.`);
             if (!nearest || secondary && nearest.cost - secondary.cost > 10)
                 nearest = secondary;
         }
@@ -397,8 +426,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         if (nearest.goal instanceof Resource)
             this.state = { mode: "collect", resourceId: nearest.goal.id, destId, nextEvalTime };
-        else if (nearest.goal instanceof Tombstone)
-            this.state = { mode: "collect", tombstoneId: nearest.goal.id, destId, nextEvalTime };
+        else if (nearest.goal instanceof Tombstone || nearest.goal instanceof StructureStorage || nearest.goal instanceof Ruin)
+            this.state = { mode: "collect", storageId: nearest.goal.id, destId, sourceDistance: 0, nextEvalTime };
         else if (nearest.goal instanceof Source)
             this.state = { mode: "collect", sourceId: nearest.goal.id, destId, sourceDistance: 0, nextEvalTime };
         else if (nearest.goal instanceof Creep) {
@@ -448,7 +477,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const canTransferEnergyToStructure = (s: CollectorCreepDistributeStructureType): boolean => {
             if (!("store" in s)) return false;
             const freeCap = s.store.getFreeCapacity(RESOURCE_ENERGY);
-            const minFreeCap = s instanceof StructureSpawn ? 5 : 0;
+            const minFreeCap = s instanceof StructureSpawn ? 10 : 0;
             if (freeCap < minFreeCap) return false;
             const targetingCollectors = getTargetingCollectors(s.id);
             // Traffic control.
@@ -463,7 +492,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     targetId: target.id,
                     targetPath: creep.pos.findPathTo(target.pos, {
                         maxRooms: 1,
-                        costCallback: (n, c) => roomCallback(n, c) || c
+                        costCallback: (n, c) => roomCallback(n, c) || c,
+                        plainCost: 2,
+                        swampCost: 6,
                     })
                 };
             }
@@ -536,7 +567,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     || s.structure instanceof StructureExtension
                 ) && canTransferEnergyToStructure(s.structure)).map(s => s.structure);
                 const fixableStructures = structures
-                    .filter(e => e.needsRepair === "now" && getTargetingCollectors(e.structure.id).size < 6)
+                    .filter(e => e.needsRepair === "now" && !reachedMaxPeers(e.structure.id, 6))
                     .map(e => e.structure);
                 const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
                 goals = [
@@ -545,15 +576,24 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     ...constructionSites,
                 ];
             }
-            let nearest = findNearestPath<CollectorCreepDistributeDestType>(creep.pos, goals, { maxRooms: 1, roomCallback: roomCallback });
+            let nearest = findNearestPath<CollectorCreepDistributeDestType>(creep.pos, goals, {
+                maxRooms: 1,
+                roomCallback: roomCallback,
+                plainCost: 2,
+                swampCost: 6,
+            });
             if (!nearest) {
                 // No goal.
                 this.logger.info(`transitDistribute: No primary goal.`);
                 // Try some no-so-urgent stuff
                 let targetGroups: [label: string, possibility: number, psum: number, structures: { structure: CollectorCreepDistributeStructureType }[]][] = [
-                    ["energy sink", 0.4, -1, structures.filter(e => canTransferEnergyToStructure(e.structure))],
-                    ["fixable structure", 0.4, -1, structures.filter(e => e.needsRepair === "yes")],
-                    ["low-pri fixable structure", 0.2, -1, _(structures).filter(e => e.needsRepair === "later").sampleSize(10).value()],
+                    ["energy sink", 4, -1, structures.filter(e =>
+                        e.structure.structureType !== STRUCTURE_STORAGE
+                        && e.structure.structureType !== STRUCTURE_CONTAINER
+                        && canTransferEnergyToStructure(e.structure))],
+                    ["fixable structure", 4, -1, structures.filter(e => e.needsRepair === "yes")],
+                    ["low-pri fixable structure", 1, -1, _(structures).filter(e => e.needsRepair === "later").sampleSize(10).value()],
+                    ["energy storage", 1, -1, structures.filter(e => e.structure.structureType == STRUCTURE_STORAGE)],
                 ];
                 targetGroups = targetGroups.filter(([, , , sts]) => !sts.length);
                 while (targetGroups.length) {
@@ -564,7 +604,12 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     const pos = _.random() * possibilitySum;
                     const group = _(targetGroups).findLast(([, , ps]) => ps <= pos) || _(targetGroups).last()!;
                     const [name, , , sts] = group;
-                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), { maxRooms: 1, roomCallback: roomCallback });
+                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), {
+                        maxRooms: 1,
+                        roomCallback: roomCallback,
+                        plainCost: 2,
+                        swampCost: 6,
+                    });
                     if (nearest) {
                         this.logger.info(`transitDistribute: Found secondary goal (${name}).`);
                     } else {
@@ -575,7 +620,10 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
             const destId = nearest.goal.id as Id<any>;
             this.logger.info(`Distribute ${nearest.goal}.`);
-            this.state = { mode: "distribute", structureId: nearest.goal.id as Id<any>, destId, nextEvalTime };
+            if (nearest.goal instanceof ConstructionSite)
+                this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
+            else
+                this.state = { mode: "distribute", structureId: nearest.goal.id as Id<any>, destId, nextEvalTime };
             this.pathCache = { targetId: destId, targetPath: nearest.path };
             return true;
         }
@@ -585,7 +633,9 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 targetId: controller.id,
                 targetPath: creep.pos.findPathTo(controller.pos, {
                     maxRooms: 1,
-                    costCallback: (n, c) => roomCallback(n, c) || c
+                    costCallback: (n, c) => roomCallback(n, c) || c,
+                    plainCost: 2,
+                    swampCost: 6,
                 })
             };
             return true;
@@ -659,10 +709,10 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         if ("resourceId" in state) {
             const resource = dest = Game.getObjectById(state.resourceId);
             result = resource ? creep.pickup(resource) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
-        } else if ("tombstoneId" in state) {
-            const tombstone = dest = Game.getObjectById(state.tombstoneId);
-            result = tombstone ? creep.withdraw(tombstone, RESOURCE_ENERGY) : undefined;
+            this.logger.trace(`nextFrameCollect: creep.pickup -> ${result}.`);
+        } else if ("storageId" in state) {
+            const storage = dest = Game.getObjectById(state.storageId);
+            result = storage ? creep.withdraw(storage, RESOURCE_ENERGY) : undefined;
             this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
         } else if ("sourceCreepId" in state) {
             const sc = dest = Game.getObjectById(state.sourceCreepId);
@@ -687,11 +737,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
         } else {
             const source = dest = Game.getObjectById(state.sourceId);
-            result = source ? creep.harvest(source) : undefined;
-            this.logger.trace(`nextFrameCollect: creep.harvest -> ${result}.`);
+            if (source) {
+                result = creep.harvest(source);
+                this.logger.trace(`nextFrameCollect: creep.harvest -> ${result}.`);
+            } else {
+                result = undefined;
+            }
         }
         state.isWalking = result === ERR_NOT_IN_RANGE;
-        if (result == null || result === ERR_NOT_IN_RANGE) {
+        if (result == null || result === ERR_NOT_IN_RANGE
+            || result === ERR_NOT_ENOUGH_RESOURCES && dest instanceof Source && isSourceWaitableForRegeneration(creep.pos, dest)
+        ) {
             if (
                 // Dest is gone.
                 !dest
@@ -706,22 +762,25 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
             if (!creep.fatigue) {
                 if (!this.pathCache) throw new Error("Assertion failure.");
-                const moveResult = creep.moveByPath(this.pathCache.targetPath);
-                if (moveResult !== OK) {
-                    this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
-                    if (moveResult === ERR_NOT_FOUND) {
-                        this.logger.trace(`pathCache: ${JSON.stringify(this.pathCache)}.`);
-                        this.transitCollect();
+                if (this.pathCache.targetPath.length) {
+                    const moveResult = creep.moveByPath(this.pathCache.targetPath);
+                    if (moveResult !== OK) {
+                        this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                        if (moveResult === ERR_NOT_FOUND) {
+                            this.logger.trace(`pathCache: ${JSON.stringify(this.pathCache)}.`);
+                            this.transitCollect();
+                        }
                     }
+                } else if (dest && dest.id === this.pathCache.targetId && this.creep.pos.inRangeTo(dest, 1)) {
+                    creep.say("Wait Regn");
+                } else {
+                    this.logger.warning("Unexpected empty targetPath in pathCache.");
                 }
             }
             return;
         }
         if (result === ERR_NOT_ENOUGH_RESOURCES) {
-            if (dest instanceof Source && dest.ticksToRegeneration <= MAX_SOURCE_REGENERATION_WAIT)
-                creep.say("Wait Regn");
-            else
-                this.transitCollect() || this.transitIdle();
+            this.transitCollect() || this.transitIdle();
             return;
         }
     }

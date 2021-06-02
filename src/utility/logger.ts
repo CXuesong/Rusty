@@ -7,7 +7,7 @@ export const enum LogLevel {
     error = 4,
 }
 
-export const loggerLevels: [match: string | RegExp, level: LogLevel][] = [
+export const loggerLevels: (readonly [match: string | RegExp, level: LogLevel])[] = [
 ];
 
 function getLevelExpr(level: LogLevel): string {

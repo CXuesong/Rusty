@@ -30,10 +30,14 @@ const roomStateDict: Record<string, RoomTransientState> = {};
 export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
     var hostiles = room.find(FIND_HOSTILE_CREEPS);
     var healable = room.find(FIND_MY_CREEPS, { filter: c => c.ticksToLive != null && c.ticksToLive > 50 && c.hitsMax - c.hits >= 20 });
+    if (hostiles.length) {
+        const message = `Hostile (${hostiles.length}) ${_(hostiles).take(5).map(h => `[${h.name}|${h.owner.username}]`).join()} spotted in room ${room.name}.`;
+        Game.notify(message, 1);
+        logger.warning(message);
+    }
     for (const tower of towers) {
         if (hostiles.length && (!healable.length || _.random() < 0.7)) {
             const target = _(hostiles).sample()!;
-            // Game.notify(`User ${username} spotted in room ${room.name}`);
             tower.attack(target);
             continue;
         }
@@ -99,8 +103,8 @@ export function onRoomNextFrame(room: Room): void {
             const actc = roomState.actualCollectors
                 = (collectorCount.normal || 0)
                 + (collectorCount.tall || 0) * 1.2
-                + (collectorCount.grande || 0) * 1.5
-                + (collectorCount.venti || 0) * 2;
+                + (collectorCount.grande || 0) * 2
+                + (collectorCount.venti || 0) * 3;
             if (actc < expc) {
                 // Spawn collectors if necessary.
                 spawns.remove(trySpawn(spawns, s => {

@@ -3,7 +3,7 @@ import { CollectorCreep, CollectorCreepState, structureNeedsRepair, __internal__
 import { DefenderCreep, DefenderCreepState } from "src/specializedCreeps/defender";
 import { __internal__getSpecializedCreepsCache } from "src/specializedCreeps/registry";
 import { initializeCreepMemory } from "src/specializedCreeps/spawn";
-import { Logger } from "./logger";
+import { Logger, loggerLevels, LogLevel } from "./logger";
 
 const logger = new Logger("Rusty.Utility.Console");
 
@@ -86,10 +86,28 @@ export class ConsoleUtils {
 
     public static highlight(obj: RoomObject | string): RoomPosition | undefined {
         if (typeof obj === "string")
-            obj = Game.powerCreeps[obj] || Game.creeps[obj] || Game.spawns[obj];
-        if (!obj || !obj.room) return undefined;
+            obj = Game.getObjectById(obj) || Game.powerCreeps[obj] || Game.creeps[obj] || Game.spawns[obj];
+        if (!obj || !(obj instanceof RoomObject) || !obj.room) return undefined;
         obj.room.visual.rect(obj.pos.x - 1, obj.pos.y - 1, 3, 3, { fill: "#ffcccc", opacity: 0.6 });
         obj.room.visual.rect(obj.pos.x, obj.pos.y, 1, 1, { fill: "#6666ff", opacity: 0.6 });
         return obj.pos;
+    }
+
+    public static get loggerLevels() {
+        return loggerLevels;
+    }
+
+    private static trackCreepLogLevelSymbol = Symbol("trackCreepLogLevel");
+
+    public static trackCreep(creepName?: string): void {
+        if (!creepName) {
+            const trackEntries = loggerLevels.filter(e => (e as any)[ConsoleUtils.trackCreepLogLevelSymbol]);
+            for (const e of trackEntries) loggerLevels.remove(e);
+            console.log(`Removed ${trackEntries.length} entries.`);
+            return;
+        }
+        const entry = [new RegExp(`^Rusty\\.SpecializedCreeps\\.\\w+\\.#${creepName}$`), LogLevel.trace] as const;
+        (entry as any)[ConsoleUtils.trackCreepLogLevelSymbol] = true;
+        loggerLevels.push(entry);
     }
 }

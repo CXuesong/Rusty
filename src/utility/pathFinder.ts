@@ -62,8 +62,8 @@ export function buildRoomCostMatrix(room: Room, options?: RoomCostMatrixOptions)
     if (!cost) {
         // console.log("Cache miss " + room);
         cost = new PathFinder.CostMatrix();
-        evadeBlockers(room, cost);
         handleRoads(room, cost);
+        evadeBlockers(room, cost);
         if (!noEvadeHostileCreeps) evadeHostileCreeps(room, cost);
         costCache[room.name] = cost;
     }
