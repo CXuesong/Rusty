@@ -19,6 +19,7 @@ interface RoomTransientState {
     actualCollectors?: number;
     collectorCreepCount?: Partial<Record<CollectorCreepVariant, number>>;
     defenderCount?: number;
+    controllerLastLevel?: number;
     controllerProgressHistory?: number[];
     controllerProgressTotal?: number;
     controllerUpgradeEta?: number;
@@ -137,6 +138,11 @@ export function onRoomNextFrame(room: Room): void {
         roomState.decayingCreeps = decayingCreeps;
     }
     if (controller?.my) {
+        if (roomState.controllerLastLevel !== controller.level) {
+            // Reset record after upgrade.
+            roomState.controllerLastLevel = controller.level;
+            roomState.controllerProgressHistory = [];
+        }
         const cph = roomState.controllerProgressHistory || (roomState.controllerProgressHistory = []);
         cph.push(controller.progress);
         if (cph.length >= CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE) {
