@@ -103,9 +103,9 @@ export function onRoomNextFrame(room: Room): void {
             const expc = Math.max(...expectedCollectors);
             const actc = roomState.actualCollectors
                 = (collectorCount.normal || 0)
-                + (collectorCount.tall || 0) * 1.2
+                + (collectorCount.tall || 0) * 1.5
                 + (collectorCount.grande || 0) * 2
-                + (collectorCount.venti || 0) * 3;
+                + (collectorCount.venti || 0) * 3.3;
             if (actc < expc) {
                 // Spawn collectors if necessary.
                 spawns.remove(trySpawn(spawns, s => {
