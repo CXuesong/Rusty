@@ -334,6 +334,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.transitIdle();
                 break;
         }
+        this.renderTargetVisual();
     }
     protected onStateRootChanging(newState: CollectorCreepState): CollectorCreepState {
         const { creep, state } = this;
@@ -368,6 +369,22 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             else this._variant = "normal";
         }
         return this._variant;
+    }
+    private renderTargetVisual() {
+        const { creep, state } = this;
+        const { room } = creep;
+        if ("destId" in state) {
+            const target = Game.getObjectById(state.destId as Id<RoomObject>);
+            if (target) {
+                room.visual.line(creep.pos, target.pos, {
+                    color: state.mode === "collect" ? "#ff0000" : "#00ff00",
+                    lineStyle: "dashed",
+                    opacity: 0.6,
+                });
+            } else {
+                room.visual.text("Target Lost", creep.pos);
+            }
+        }
     }
     private transitCollect(): boolean {
         const { creep } = this;
