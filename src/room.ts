@@ -7,8 +7,6 @@ import { getSpecializedCreep } from "./specializedCreeps/registry";
 import { Logger } from "./utility/logger";
 import { visualTextMultiline } from "./utility/visual";
 
-const CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE = 2000;
-
 interface RustyRoomMemory {
     nextSpawnTime?: number;
 }
@@ -20,7 +18,9 @@ interface RoomTransientState {
     collectorCreepCount?: Partial<Record<CollectorCreepVariant, number>>;
     defenderCount?: number;
     controllerLastLevel?: number;
-    controllerProgressHistory?: number[];
+    // Linear regression: y = a + bx
+    controllerProgressRegressionParams?: { n: number; sx: number; sy: number; sxy: number; sx2: number; a: number; b: number };
+    controllerProgress?: number;
     controllerProgressTotal?: number;
     controllerUpgradeEta?: number;
 }
@@ -141,20 +141,24 @@ export function onRoomNextFrame(room: Room): void {
         if (roomState.controllerLastLevel !== controller.level) {
             // Reset record after upgrade.
             roomState.controllerLastLevel = controller.level;
-            roomState.controllerProgressHistory = [];
+            delete roomState.controllerProgressRegressionParams;
         }
-        const cph = roomState.controllerProgressHistory || (roomState.controllerProgressHistory = []);
-        cph.push(controller.progress);
-        if (cph.length >= CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE) {
-            cph.splice(0, Math.ceil(cph.length - CONTROLLER_PROGRESS_HISTORY_TRIM_SIZE / 2));
-        }
+        roomState.controllerProgress = controller.progress;
         roomState.controllerProgressTotal = controller.progressTotal;
-        roomState.controllerUpgradeEta = cph.length >= 3
-            ? Math.round((controller.progressTotal - controller.progress) / ((cph[cph.length - 1] - cph[0]) / (cph.length - 1)))
-            : undefined;
+        const cprp = roomState.controllerProgressRegressionParams || (roomState.controllerProgressRegressionParams = { n: 0, sx: 0, sy: 0, sxy: 0, sx2: 0, a: 0, b: 0 });
+        cprp.n++;
+        const n = cprp.n;
+        cprp.sx += n;
+        cprp.sx2 += n * n;
+        const y = controller.progressTotal - controller.progress;
+        cprp.sy += y;
+        cprp.sxy += n * y;
+        const { sx, sy, sx2, sxy } = cprp;
+        const b = cprp.b = (n * sxy - sx * sy) / (n * sx2 - sx * sx);
+        const a = cprp.a = (sy - b * sx) / n;
+        roomState.controllerUpgradeEta = n >= 3 ? Math.round(-a / b) - n : undefined;
     } else {
-        delete roomState.controllerProgressHistory;
-        delete roomState.controllerProgressTotal;
+        delete roomState.controllerProgressRegressionParams;
         delete roomState.controllerUpgradeEta;
     }
 }
@@ -166,7 +170,7 @@ function renderRoomStatus(room: Room): void {
         expectedCollectors: expc,
         actualCollectors: actc,
         decayingCreeps,
-        controllerProgressHistory: cph,
+        controllerProgress: cpc,
         controllerProgressTotal: cpt,
         controllerUpgradeEta: cueta,
     } = roomStateDict[room.name] || {};
@@ -176,7 +180,7 @@ function renderRoomStatus(room: Room): void {
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
         `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${actc} / [${expc}])`,
-        cph ? `Controller: ${_(cph).last()}/${cpt} (${cph && cpt && Math.round(_(cph).last()! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
+        cpc ? `Controller: ${cpc}/${cpt} (${cpc && cpt && Math.round(cpc! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
         "",
         "Decaying creeps",
         ...decayingCreepsExpr

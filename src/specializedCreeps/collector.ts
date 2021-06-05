@@ -424,6 +424,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const collectingCreeps = enumSpecializedCreeps(CollectorCreep, room)
                 .filter(c => c !== this
                     && c.state.mode === "collect"
+                    && !c.state.isWalking
                     && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1)
                     && !reachedMaxPeers(c.id, 1))
                 .map(c => c.creep)
@@ -578,13 +579,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { controller } = room;
         let controllerPriority: number;
         if (controller?.my) {
-            if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 3600 && !reachedMaxPeers(controller.id, 4)) {
+            if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 7200 && !reachedMaxPeers(controller.id, 4)) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
             } else if (!reachedMaxPeers(controller.id, 6)) {
-                controllerPriority = 0.2;
+                controllerPriority = 0.5;
             } else if (!reachedMaxPeers(controller.id, 10)) {
-                controllerPriority = 0.05;
+                controllerPriority = 0.1;
             } else {
                 controllerPriority = 0;
             }

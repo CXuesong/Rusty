@@ -30,6 +30,8 @@ export function onNextFrame() {
     // Drive the creeps
     for (const creep of _(Game.creeps).values()) {
         try {
+            // skip spawning creeps.
+            if (creep.spawning) continue;
             const sc = getSpecializedCreep(creep);
             if (!sc) continue;
             const { ticksToLive } = creep;
