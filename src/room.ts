@@ -103,9 +103,9 @@ export function onRoomNextFrame(room: Room): void {
             const expc = Math.max(...expectedCollectors);
             const actc = roomState.actualCollectors
                 = (collectorCount.normal || 0)
-                + (collectorCount.tall || 0) * 1.5
+                + (collectorCount.tall || 0) * 1.3
                 + (collectorCount.grande || 0) * 2
-                + (collectorCount.venti || 0) * 3.3;
+                + (collectorCount.venti || 0) * 3.2;
             if (actc < expc) {
                 // Spawn collectors if necessary.
                 spawns.remove(trySpawn(spawns, s => {
@@ -179,7 +179,7 @@ function renderRoomStatus(room: Room): void {
         .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
-        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${actc} / [${expc}])`,
+        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${Math.round(actc * 10) / 10} / [${expc}])`,
         cpc ? `Controller: ${cpc}/${cpt} (${cpc && cpt && Math.round(cpc! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
         "",
         "Decaying creeps",
