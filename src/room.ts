@@ -179,7 +179,7 @@ function renderRoomStatus(room: Room): void {
         .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
-        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${Math.round(actc * 10) / 10} / [${expc}])`,
+        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${actc && Math.round(actc * 10) / 10} / [${expc}])`,
         cpc ? `Controller: ${cpc}/${cpt} (${cpc && cpt && Math.round(cpc! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
         "",
         "Decaying creeps",

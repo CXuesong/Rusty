@@ -275,9 +275,10 @@ export function onNextFrame() {
             // ...room.find(FIND_SOURCES),
             ...room.find(FIND_DROPPED_RESOURCES),
             ...room.find(FIND_TOMBSTONES),
-        ].filter(s => !getTargetingCollectors(s.id).size && isCollectableFrom(s));
+        ].filter(s => !getTargetingCollectors(s.id).size && isCollectableFrom(s))
+            .map(t => t.id);
         const prevUntargeted = untargetedCollectables[room.name] || {};
-        const nextUntargeted = _(untargeted).mapValues(id => prevUntargeted[id] ?? Game.time).value();
+        const nextUntargeted = _(untargeted).keyBy(id => id).mapValues(id => prevUntargeted[id] ?? Game.time).value();
         untargetedCollectables[room.name] = nextUntargeted;
     }
 }
@@ -405,7 +406,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep } = this;
         const { room } = creep;
         const untargeted = _(untargetedCollectables[room.name] || {})
-            .entries().filter(([id, since]) => since >= Game.time + 10 && !getTargetingCollectors(id as Id<any>).size)
+            .entries().filter(([id, since]) => Game.time >= since + 10 && !getTargetingCollectors(id as Id<any>).size)
             .map(([id]) => Game.getObjectById(id as Id<CollectorCreepCollectPrimaryDestType>)!)
             .filter(s => !!s && isCollectableFrom(s, creep.pos))
             .value();
