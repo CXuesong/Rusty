@@ -7,7 +7,7 @@ import { getSpecializedCreep } from "../registry";
 import { initializeCreepMemory, spawnCreep } from "../spawn";
 import { getRoomMemory } from "./memory";
 import { isCollectableFrom, structureNeedsRepair } from "./predicates";
-import { CollectorCreepCollectTargetType, CollectorCreepCollectPrimaryTargetType, CollectorCreepDistributeTargetType, CollectorCreepDistributeStructureType, CollectorCreepState, CollectorTargetId } from "./state";
+import { CollectorCreepCollectPrimaryTargetType, CollectorCreepCollectTargetType, CollectorCreepDistributeStructureType, CollectorCreepDistributeTargetType, CollectorCreepState } from "./state";
 import { addTargetingCollector, getTargetingCollectors, initialize as initializeTargetTracking, removeTargetingCollector } from "./targetTracking";
 
 export const MIN_COLLECTABLE_ENERGY = 20;
@@ -244,11 +244,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep, state } = this;
         if (!creep.store.energy) return false;
         const { room } = creep;
-        const reachedMaxPeers = (id: CollectorTargetId, maxPeers: number) => {
-            const c = getTargetingCollectors(id);
-            const peers = c.size - (c.has(this.id) ? 1 : 0);
-            return peers >= maxPeers;
-        }
         const canTransferEnergyToStructure = (s: CollectorCreepDistributeStructureType): boolean => {
             if (!("store" in s)) return false;
             const freeCap = s.store.getFreeCapacity(RESOURCE_ENERGY);
@@ -299,12 +294,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { controller } = room;
         let controllerPriority: number;
         if (controller?.my) {
-            if (!reachedMaxPeers(controller.id, 1) || controller.ticksToDowngrade <= 7200 && !reachedMaxPeers(controller.id, 4)) {
+            const targetingCollectors = getTargetingCollectors(controller.id).size;
+            if (targetingCollectors < 1 || controller.ticksToDowngrade <= 7200 && targetingCollectors < 4) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
-            } else if (!reachedMaxPeers(controller.id, 6)) {
+            } else if (targetingCollectors < 6) {
                 controllerPriority = 0.5;
-            } else if (!reachedMaxPeers(controller.id, 10)) {
+            } else if (targetingCollectors < 10) {
                 controllerPriority = 0.1;
             } else {
                 controllerPriority = 0;
@@ -325,7 +321,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     || s.structure instanceof StructureExtension
                 ) && canTransferEnergyToStructure(s.structure)).map(s => s.structure);
                 const fixableStructures = structures
-                    .filter(e => e.needsRepair === "now" && !reachedMaxPeers(e.structure.id, 6))
+                    .filter(e => e.needsRepair === "now" && getTargetingCollectors(e.structure.id).size < 6)
                     .map(e => e.structure);
                 const constructionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.progress < s.progressTotal });
                 goals = [
