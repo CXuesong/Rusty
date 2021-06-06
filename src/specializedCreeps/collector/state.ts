@@ -8,9 +8,9 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
     nextEvalTime: number;
 }
 
-export type CollectorCreepCollectPrimaryDestType = Source | Tombstone | Resource;
-export type CollectorCreepCollectSecondaryType = Creep | StructureStorage;
-export type CollectorCreepCollectDestType = CollectorCreepCollectPrimaryDestType | CollectorCreepCollectSecondaryType;
+export type CollectorCreepCollectPrimaryTargetType = Source | Tombstone | Resource;
+export type CollectorCreepCollectSecondaryTargetType = Creep | StructureStorage;
+export type CollectorCreepCollectTargetType = CollectorCreepCollectPrimaryTargetType | CollectorCreepCollectSecondaryTargetType;
 
 // General structure: has hit point, may store energy.
 export type CollectorCreepDistributeStructureType =
@@ -23,14 +23,16 @@ export type CollectorCreepDistributeStructureType =
     | StructureContainer
     | StructureStorage;
 
-export type CollectorCreepDistributeDestType =
+export type CollectorCreepDistributeTargetType =
     | ConstructionSite
     | StructureController
     | CollectorCreepDistributeStructureType;
 
+export type CollectorTargetId = Id<RoomObject>;
+
 interface CollectorCreepStateCollect extends CollectorCreepStateBase {
     mode: "collect";
-    destId: Id<CollectorCreepCollectDestType>;
+    targetId: Id<CollectorCreepCollectTargetType>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
@@ -57,24 +59,24 @@ interface CollectorCreepStateCollectStorage extends CollectorCreepStateCollect {
 
 interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
     mode: "distribute";
-    destId: Id<CollectorCreepDistributeDestType>;
+    targetId: Id<CollectorCreepDistributeTargetType>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
 interface CollectorCreepStateDistributeStructure extends CollectorCreepStateDistribute {
     structureId: Id<CollectorCreepDistributeStructureType>;
-    destId: Id<CollectorCreepDistributeStructureType>;
+    targetId: Id<CollectorCreepDistributeStructureType>;
 }
 
 interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
     controllerId: Id<StructureController>;
-    destId: Id<StructureController>;
+    targetId: Id<StructureController>;
 }
 
 interface CollectorCreepStateDistributeConstruction extends CollectorCreepStateDistribute {
     constructionSiteId: Id<ConstructionSite>;
-    destId: Id<ConstructionSite>;
+    targetId: Id<ConstructionSite>;
 }
 
 export type CollectorCreepState

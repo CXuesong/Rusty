@@ -7,7 +7,7 @@ import { getSpecializedCreep } from "../registry";
 import { initializeCreepMemory, spawnCreep } from "../spawn";
 import { getRoomMemory } from "./memory";
 import { isCollectableFrom, structureNeedsRepair } from "./predicates";
-import { CollectorCreepCollectDestType, CollectorCreepCollectPrimaryDestType, CollectorCreepDistributeDestType, CollectorCreepDistributeStructureType, CollectorCreepState } from "./state";
+import { CollectorCreepCollectTargetType, CollectorCreepCollectPrimaryTargetType, CollectorCreepDistributeTargetType, CollectorCreepDistributeStructureType, CollectorCreepState, CollectorTargetId } from "./state";
 import { addTargetingCollector, getTargetingCollectors, initialize as initializeTargetTracking, removeTargetingCollector } from "./targetTracking";
 
 export const MIN_COLLECTABLE_ENERGY = 20;
@@ -15,8 +15,6 @@ export const MIN_COLLECTABLE_ENERGY = 20;
 const RANGE_DISTANCE_RATIO = 1.6;
 
 export type CollectorCreepVariant = "normal" | "tall" | "grande" | "venti";
-
-type CollectorDestId = Id<RoomObject>;
 
 const variantDefinitions: Record<CollectorCreepVariant, { body: BodyPartProfile, prefix: string }> = {
     normal: {
@@ -94,18 +92,18 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             this.logger.info(`Switch mode: ${state.mode} -> ${newState.mode}.`);
         }
         if ((state.mode === "collect" || state.mode === "distribute")
-            && (newState.mode !== state.mode || !("destId" in newState) || newState.destId !== state.destId)) {
-            removeTargetingCollector(state.destId, this.id);
+            && (newState.mode !== state.mode || !("targetId" in newState) || newState.targetId !== state.targetId)) {
+            removeTargetingCollector(state.targetId, this.id);
             if (newState.mode === "collect" || newState.mode === "distribute")
-                addTargetingCollector(newState.destId, this.id);
+                addTargetingCollector(newState.targetId, this.id);
         }
         return newState;
     }
     public dispose() {
         const { state } = this;
         if (this.disposed) return;
-        if ((state.mode === "collect" || state.mode === "distribute") && "destId" in state) {
-            removeTargetingCollector(state.destId, this.id);
+        if ((state.mode === "collect" || state.mode === "distribute") && "targetId" in state) {
+            removeTargetingCollector(state.targetId, this.id);
         }
         super.dispose();
     }
@@ -124,8 +122,8 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private renderTargetVisual() {
         const { creep, state } = this;
         const { room } = creep;
-        if ("destId" in state) {
-            const target = Game.getObjectById(state.destId as Id<RoomObject>);
+        if ("targetId" in state) {
+            const target = Game.getObjectById(state.targetId as Id<RoomObject>);
             if (target) {
                 room.visual.line(creep.pos, target.pos, {
                     color: state.mode === "collect" ? "#ff0000" : "#00ff00",
@@ -142,10 +140,10 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { room } = creep;
         const untargeted = _(getRoomMemory(room).untargetedCollectables)
             .entries().filter(([id, since]) => Game.time >= since + 10 && !getTargetingCollectors(id as Id<any>).size)
-            .map(([id]) => Game.getObjectById(id as Id<CollectorCreepCollectPrimaryDestType>)!)
+            .map(([id]) => Game.getObjectById(id as Id<CollectorCreepCollectPrimaryTargetType>)!)
             .filter(s => !!s && isCollectableFrom(s, creep.pos))
             .value();
-        const targets: CollectorCreepCollectDestType[] = untargeted.length
+        const targets: CollectorCreepCollectTargetType[] = untargeted.length
             ? untargeted
             : [
                 ...room.find(FIND_TOMBSTONES),
@@ -191,7 +189,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 nearest = secondary;
         }
         if (!nearest) return false;
-        const destId = nearest.goal.id;
+        const targetId = nearest.goal.id;
         const nextEvalTime = Game.time + _.random(4, 10);
         const distance = nearest.goal.pos.getRangeTo(creep);
         this.logger.info(`transitCollect: Collect ${nearest.goal}, path: [${nearest.path.length}], cost ${nearest?.cost}, distnace: ${distance}.`);
@@ -199,11 +197,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             this.logger.warning(`transitCollect: Empty path to ${nearest.goal}. Distance: ${distance}.`);
         }
         if (nearest.goal instanceof Resource)
-            this.state = { mode: "collect", resourceId: nearest.goal.id, destId, nextEvalTime };
+            this.state = { mode: "collect", resourceId: nearest.goal.id, targetId, nextEvalTime };
         else if (nearest.goal instanceof Tombstone || nearest.goal instanceof StructureStorage || nearest.goal instanceof Ruin)
-            this.state = { mode: "collect", storageId: nearest.goal.id, destId, sourceDistance: 0, nextEvalTime };
+            this.state = { mode: "collect", storageId: nearest.goal.id, targetId, sourceDistance: 0, nextEvalTime };
         else if (nearest.goal instanceof Source)
-            this.state = { mode: "collect", sourceId: nearest.goal.id, destId, sourceDistance: 0, nextEvalTime };
+            this.state = { mode: "collect", sourceId: nearest.goal.id, targetId, sourceDistance: 0, nextEvalTime };
         else if (nearest.goal instanceof Creep) {
             const sourceCollector = getSpecializedCreep(nearest.goal, CollectorCreep);
             if (!sourceCollector) throw new Error("Unexpected null sourceCollector.");
@@ -212,7 +210,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.state = {
                     mode: "collect",
                     sourceCreepId: nearest.goal.id,
-                    destId,
+                    targetId,
                     sourceDistance: sourceState.sourceDistance + 1,
                     nextEvalTime
                 };
@@ -246,7 +244,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep, state } = this;
         if (!creep.store.energy) return false;
         const { room } = creep;
-        const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
+        const reachedMaxPeers = (id: CollectorTargetId, maxPeers: number) => {
             const c = getTargetingCollectors(id);
             const peers = c.size - (c.has(this.id) ? 1 : 0);
             return peers >= maxPeers;
@@ -336,7 +334,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     ...constructionSites,
                 ];
             }
-            let nearest = findNearestPath<CollectorCreepDistributeDestType>(creep.pos, goals, { maxRooms: 1 });
+            let nearest = findNearestPath<CollectorCreepDistributeTargetType>(creep.pos, goals, { maxRooms: 1 });
             if (!nearest) {
                 // No goal.
                 this.logger.info(`transitDistribute: No primary goal.`);
@@ -371,17 +369,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 }
                 if (!nearest) return false;
             }
-            const destId = nearest.goal.id as Id<any>;
+            const targetId = nearest.goal.id as Id<any>;
             this.logger.info(`Distribute ${nearest.goal}.`);
             if (nearest.goal instanceof ConstructionSite)
-                this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
+                this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, targetId, nextEvalTime };
             else
-                this.state = { mode: "distribute", structureId: nearest.goal.id as Id<any>, destId, nextEvalTime };
+                this.state = { mode: "distribute", structureId: nearest.goal.id as Id<any>, targetId, nextEvalTime };
             this.assignPath(nearest.goal, nearest.path);
             return true;
         }
         if (controller?.my) {
-            this.state = { mode: "distribute", controllerId: controller.id, destId: controller.id, nextEvalTime }
+            this.state = { mode: "distribute", controllerId: controller.id, targetId: controller.id, nextEvalTime }
             if (!this.assignPath(controller)) {
                 this.logger.warning(`Failed to arrange a path to the controller: ${controller}.`);
                 return false;
@@ -434,17 +432,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep, state } = this;
         if (state.mode !== "collect") throw new Error("Invalid state.");
         let result;
-        let dest;
+        let target;
         if ("resourceId" in state) {
-            const resource = dest = Game.getObjectById(state.resourceId);
+            const resource = target = Game.getObjectById(state.resourceId);
             result = resource ? creep.pickup(resource) : undefined;
             this.logger.trace(`nextFrameCollect: creep.pickup -> ${result}.`);
         } else if ("storageId" in state) {
-            const storage = dest = Game.getObjectById(state.storageId);
+            const storage = target = Game.getObjectById(state.storageId);
             result = storage ? creep.withdraw(storage, RESOURCE_ENERGY) : undefined;
             this.logger.trace(`nextFrameCollect: creep.withdraw -> ${result}.`);
         } else if ("sourceCreepId" in state) {
-            const sc = dest = Game.getObjectById(state.sourceCreepId);
+            const sc = target = Game.getObjectById(state.sourceCreepId);
             const scollector = sc && getSpecializedCreep(sc, CollectorCreep);
             const scstate = scollector?.state;
             if (scstate?.mode == "collect" && "sourceDistance" in scstate && scstate.sourceDistance < state.sourceDistance) {
@@ -465,7 +463,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.logger.info(`nextFrameCollect: sourceCreep ${sc} changed source: mode=${scstate?.mode}.`);
             }
         } else {
-            const source = dest = Game.getObjectById(state.sourceId);
+            const source = target = Game.getObjectById(state.sourceId);
             if (source) {
                 result = creep.harvest(source);
                 this.logger.trace(`nextFrameCollect: creep.harvest -> ${result}.`);
@@ -476,12 +474,12 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         state.isWalking = result === ERR_NOT_IN_RANGE;
         if (result == null || result === ERR_NOT_IN_RANGE || result === ERR_NOT_ENOUGH_RESOURCES) {
             if (
-                // Dest is gone.
-                !dest
+                // target is gone.
+                !target
                 // Need to prepare next path.
                 || Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
                 // Transient cache lost.
-                || this.pathCache?.targetId !== dest.id) {
+                || this.pathCache?.targetId !== target.id) {
                 if (!this.transitCollect()) {
                     this.transitIdle();
                     return;
@@ -492,16 +490,16 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 if (this.pathCache.targetPath.length) {
                     const moveResult = creep.moveByPath(this.pathCache.targetPath);
                     if (moveResult !== OK) {
-                        this.logger.warning(`nextFrameCollect: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                        this.logger.warning(`nextFrameCollect: creep.moveByPath(${target}) -> ${moveResult}.`);
                         if (moveResult === ERR_NOT_FOUND) {
                             this.logger.trace(`pathCache: ${JSON.stringify(this.pathCache)}.`);
                             this.transitCollect();
                         }
                     }
-                } else if (dest && dest.id === this.pathCache.targetId && this.creep.pos.inRangeTo(dest, 1)) {
+                } else if (target && target.id === this.pathCache.targetId && this.creep.pos.inRangeTo(target, 1)) {
                     creep.say("Wait Regn");
                 } else {
-                    this.logger.warning(`Unexpected empty targetPath in pathCache. dest: ${dest}.`);
+                    this.logger.warning(`Unexpected empty targetPath in pathCache. Target: ${target}.`);
                 }
             }
             return;
@@ -512,13 +510,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         const { creep, state } = this;
         if (state.mode !== "distribute") throw new Error("Invalid state.");
         let result;
-        let dest;
+        let target;
         if ("constructionSiteId" in state) {
-            const constructionSite = dest = Game.getObjectById(state.constructionSiteId);
+            const constructionSite = target = Game.getObjectById(state.constructionSiteId);
             result = constructionSite ? creep.build(constructionSite) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.build -> ${result}.`);
         } else if ("structureId" in state) {
-            const st = dest = Game.getObjectById(state.structureId);
+            const st = target = Game.getObjectById(state.structureId);
             if (!st) {
                 result = undefined
             } else {
@@ -534,19 +532,19 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 }
             }
         } else {
-            const controller = dest = Game.getObjectById(state.controllerId);
+            const controller = target = Game.getObjectById(state.controllerId);
             result = controller ? creep.upgradeController(controller) : undefined;
             this.logger.trace(`nextFrameDistribute: creep.upgradeController -> ${result}.`);
         }
         state.isWalking = result === ERR_NOT_IN_RANGE;
         if (result == null || result === ERR_NOT_IN_RANGE || result == ERR_INVALID_TARGET) {
             if (
-                // Dest is gone.
-                !dest
+                // target is gone.
+                !target
                 // Need to prepare next path.
                 || Game.time >= state.nextEvalTime && (!creep.fatigue || creep.fatigue <= 4 && _.random(4) === 0)
                 // Transient cache lost.
-                || this.pathCache?.targetId !== dest.id) {
+                || this.pathCache?.targetId !== target.id) {
             } {
                 // Recheck nearest spawn / controller.
                 if (!this.transitDistribute()) {
@@ -559,7 +557,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 if (this.pathCache.targetPath.length) {
                     const moveResult = creep.moveByPath(this.pathCache.targetPath);
                     if (moveResult !== OK) {
-                        this.logger.warning(`nextFrameDistribute: creep.moveByPath(${dest}) -> ${moveResult}.`);
+                        this.logger.warning(`nextFrameDistribute: creep.moveByPath(${target}) -> ${moveResult}.`);
                         creep.room.visual.rect(creep.pos.x, creep.pos.y, 1, 1, { fill: "#ff0000" });
                     }
                 }

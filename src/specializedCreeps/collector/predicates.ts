@@ -1,5 +1,5 @@
 import _ from "lodash/index";
-import { CollectorCreepCollectDestType, CollectorCreepCollectPrimaryDestType } from "./state";
+import { CollectorCreepCollectTargetType, CollectorCreepCollectPrimaryTargetType } from "./state";
 import { getTargetingCollectors } from "./targetTracking";
 
 const MIN_COLLECTABLE_ENERGY_NEAR = 5;
@@ -57,7 +57,7 @@ export function structureNeedsRepair(structure: Structure): "now" | "yes" | "lat
         ? "now" : "yes";
 }
 
-export function estimateResourceDecayRatio(target: CollectorCreepCollectDestType, currentPos: RoomPosition): number {
+export function estimateResourceDecayRatio(target: CollectorCreepCollectTargetType, currentPos: RoomPosition): number {
     const eta = target.pos.getRangeTo(currentPos) * RANGE_DISTANCE_RATIO;
     if (target instanceof Resource) {
         return Math.pow(1 - 1 / ENERGY_DECAY, eta);
@@ -69,7 +69,7 @@ export function estimateResourceDecayRatio(target: CollectorCreepCollectDestType
     return 1;
 }
 
-export function isCollectableFrom(target: CollectorCreepCollectPrimaryDestType, srcPos?: RoomPosition): boolean {
+export function isCollectableFrom(target: CollectorCreepCollectPrimaryTargetType, srcPos?: RoomPosition): boolean {
     const decayRatio = srcPos ? estimateResourceDecayRatio(target, srcPos) : 1;
     let storeInfo: { energy: number; rest: number; maxCollectors: number; };
     if ("store" in target) {

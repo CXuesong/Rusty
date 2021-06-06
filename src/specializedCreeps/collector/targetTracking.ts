@@ -3,10 +3,9 @@ import { Logger } from "src/utility/logger";
 import { enumSpecializedCreeps, SpecializedCreepType } from "../base";
 import { getRoomMemory } from "./memory";
 import { isCollectableFrom } from "./predicates";
-import { CollectorCreepState } from "./state";
+import { CollectorCreepState, CollectorTargetId } from "./state";
 
 let CollectorCreep: SpecializedCreepType<CollectorCreepState>;
-export type CollectorTargetId = Id<RoomObject>;
 
 let occupiedDests: Map<CollectorTargetId, Set<Id<Creep>>> | undefined;
 
@@ -27,9 +26,9 @@ export function initialize(collectorCreepType: SpecializedCreepType<CollectorCre
 export function houseKeeping(logger: Logger) {
     if (occupiedDests) {
         let count = 0;
-        for (const [destId, collectors] of occupiedDests) {
-            if (!Game.getObjectById(destId)) {
-                occupiedDests.delete(destId);
+        for (const [targetId, collectors] of occupiedDests) {
+            if (!Game.getObjectById(targetId)) {
+                occupiedDests.delete(targetId);
                 continue;
             }
             for (const collector of collectors) {
@@ -47,9 +46,9 @@ export function getTargetingCollectors(id: CollectorTargetId): ReadonlySet<Id<Cr
         occupiedDests = new Map();
         for (const c of enumSpecializedCreeps(CollectorCreep)) {
             if (c.state.mode === "collect")
-                addTargetingCollector(c.state.destId, c.id);
+                addTargetingCollector(c.state.targetId, c.id);
             else if (c.state.mode === "distribute")
-                addTargetingCollector(c.state.destId, c.id);
+                addTargetingCollector(c.state.targetId, c.id);
         }
     }
     return occupiedDests.get(id) || emptySet;
