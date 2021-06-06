@@ -1,4 +1,4 @@
-import _ from "lodash/index";
+import _ from "lodash";
 import { bodyPartArrayToProfile, BodyPartProfile } from "src/utility/creep";
 import { Logger } from "src/utility/logger";
 import { findNearestPath, findPathTo } from "src/utility/pathFinder";
@@ -251,13 +251,13 @@ export function isCollectableFrom(target: CollectorCreepCollectPrimaryDestType, 
         throw new TypeError("Unexpected target type.");
     }
     // else if (dest instanceof Mineral) store = dest
-    const { energy: energyAmount, rest: restAmount } = storeInfo;
+    const { energy: energyAmount, rest: restAmount, maxCollectors } = storeInfo;
     const minCollectableEnergy = !srcPos || srcPos.inRangeTo(target, 2) ? MIN_COLLECTABLE_ENERGY_NEAR : MIN_COLLECTABLE_ENERGY_NEAR;
     const minCollectableOtherResource = 1;
     if (energyAmount < minCollectableEnergy && restAmount < minCollectableOtherResource) return false;
     const targetingCollectors = getTargetingCollectors(target.id);
     // Traffic control.
-    if (targetingCollectors.size >= 6) return false;
+    if (targetingCollectors.size >= maxCollectors) return false;
     const collectorCap = _([...targetingCollectors]).map(id => Game.getObjectById(id)?.store.getFreeCapacity() || 0).sum();
     return collectorCap < energyAmount + restAmount;
 }
@@ -265,6 +265,22 @@ export function isCollectableFrom(target: CollectorCreepCollectPrimaryDestType, 
 export const __internal__debugInfo = {
     getOccupiedDests: () => occupiedDests
 };
+
+// <Id<CollectorCreepCollectPrimaryDestType>, untargetedSince>
+const untargetedCollectables: Partial<Record<string, Record<string, number>>> = {};
+
+export function onNextFrame() {
+    for (const room of _(Game.rooms).values()) {
+        const untargeted = [
+            // ...room.find(FIND_SOURCES),
+            ...room.find(FIND_DROPPED_RESOURCES),
+            ...room.find(FIND_TOMBSTONES),
+        ].filter(s => !getTargetingCollectors(s.id).size && isCollectableFrom(s));
+        const prevUntargeted = untargetedCollectables[room.name] || {};
+        const nextUntargeted = _(untargeted).mapValues(id => prevUntargeted[id] ?? Game.time).value();
+        untargetedCollectables[room.name] = nextUntargeted;
+    }
+}
 
 const variantDefinitions: Record<CollectorCreepVariant, { body: BodyPartProfile, prefix: string }> = {
     normal: {
@@ -388,18 +404,20 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private transitCollect(): boolean {
         const { creep } = this;
         const { room } = creep;
-        const reachedMaxPeers = (id: CollectorDestId, maxPeers: number) => {
-            const c = getTargetingCollectors(id);
-            const peers = c.size - (c.has(this.id) ? 1 : 0);
-            return peers >= maxPeers;
-        }
-        const targets = [
-            ...room.find(FIND_TOMBSTONES),
-            ...room.find(FIND_DROPPED_RESOURCES),
-            ...room.find(FIND_SOURCES),
-        ].filter(t => isCollectableFrom(t, creep.pos));
+        const untargeted = _(untargetedCollectables[room.name] || {})
+            .entries().filter(([id, since]) => since >= Game.time + 10 && !getTargetingCollectors(id as Id<any>).size)
+            .map(([id]) => Game.getObjectById(id as Id<CollectorCreepCollectPrimaryDestType>)!)
+            .filter(s => !!s && isCollectableFrom(s, creep.pos))
+            .value();
+        const targets: CollectorCreepCollectDestType[] = untargeted.length
+            ? untargeted
+            : [
+                ...room.find(FIND_TOMBSTONES),
+                ...room.find(FIND_DROPPED_RESOURCES),
+                ...room.find(FIND_SOURCES),
+            ].filter(t => isCollectableFrom(t, creep.pos));
         // Prefer collect from direct source.
-        let nearest = findNearestPath<Source | Tombstone | Resource | Creep | StructureStorage>(creep.pos, targets, { maxRooms: 1 });
+        let nearest = findNearestPath(creep.pos, targets, { maxRooms: 1 });
         this.logger.info(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
         if (!nearest || nearest.cost > 10) {
             // If every direct source is too far away...
@@ -409,8 +427,11 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 .filter(c => c !== this
                     && c.state.mode === "collect"
                     && !c.state.isWalking
-                    && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1)
-                    && !reachedMaxPeers(c.id, 1))
+                    && (("sourceId" in c.state || "sourceCreepId" in c.state) && c.state.sourceDistance <= 1))
+                .filter(c => {
+                    const collectors = getTargetingCollectors(c.id)
+                    return collectors.size == 0 || collectors.size == 1 && collectors.has(creep.id)
+                })
                 .map(c => c.creep)
                 .filter(c => {
                     // We still need some time to arrive the target creep. Target can collect some more energy meanwhile.

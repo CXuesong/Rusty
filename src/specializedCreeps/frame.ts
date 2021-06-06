@@ -1,6 +1,6 @@
 import _ from "lodash";
 import { Logger } from "src/utility/logger";
-import { CollectorCreep, houseKeeping as collectorHouseKeeping } from "./collector";
+import { CollectorCreep, houseKeeping as collectorHouseKeeping, onNextFrame as collectorOnNextFrame } from "./collector";
 import { DefenderCreep } from "./defender";
 import { getSpecializedCreep, houseKeeping as registryHouseKeeping, knownCreepTypes } from "./registry";
 
@@ -27,6 +27,7 @@ function houseKeeping() {
 let nextHouseKeepingTime = 0;
 
 export function onNextFrame() {
+    collectorOnNextFrame();
     // Drive the creeps
     for (const creep of _(Game.creeps).values()) {
         try {
