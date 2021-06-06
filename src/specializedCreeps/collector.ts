@@ -1,7 +1,7 @@
 import _ from "lodash/index";
 import { bodyPartArrayToProfile, BodyPartProfile } from "src/utility/creep";
 import { Logger } from "src/utility/logger";
-import { buildRoomCostMatrix, findNearestPath } from "src/utility/pathFinder";
+import { findNearestPath, findPathTo } from "src/utility/pathFinder";
 import { enumSpecializedCreeps, SpecializedCreepBase, SpecializedSpawnCreepErrorCode } from "./base";
 import { getSpecializedCreep } from "./registry";
 import { initializeCreepMemory, spawnCreep } from "./spawn";
@@ -308,7 +308,6 @@ const variantDefinitions: Record<CollectorCreepVariant, { body: BodyPartProfile,
 export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     public static readonly rustyType = "collector";
     private logger = new Logger(`Rusty.SpecializedCreeps.CollectorCreep.#${this.creep.name}`);
-    private pathCache: { targetId: string; targetPath: RoomPosition[] | PathStep[] } | undefined;
     public static spawn(spawn: StructureSpawn, variant?: CollectorCreepVariant): string | SpecializedSpawnCreepErrorCode {
         if (!variant) variant = "normal";
         var def = variantDefinitions[variant];
@@ -394,28 +393,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const peers = c.size - (c.has(this.id) ? 1 : 0);
             return peers >= maxPeers;
         }
-        const roomCallback = (roomName: string) => {
-            const room = Game.rooms[roomName];
-            if (!room) {
-                this.logger.warning(`Unable to check room ${roomName}.`);
-                return false;
-            }
-            const costs = buildRoomCostMatrix(room);
-            costs.set(creep.pos.x, creep.pos.y, 0);
-            return costs;
-        }
         const targets = [
             ...room.find(FIND_TOMBSTONES),
             ...room.find(FIND_DROPPED_RESOURCES),
             ...room.find(FIND_SOURCES),
         ].filter(t => isCollectableFrom(t, creep.pos));
         // Prefer collect from direct source.
-        let nearest = findNearestPath<Source | Tombstone | Resource | Creep | StructureStorage>(creep.pos, targets, {
-            maxRooms: 1,
-            roomCallback,
-            plainCost: 2,
-            swampCost: 6,
-        });
+        let nearest = findNearestPath<Source | Tombstone | Resource | Creep | StructureStorage>(creep.pos, targets, { maxRooms: 1 });
         this.logger.info(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
         if (!nearest || nearest.cost > 10) {
             // If every direct source is too far away...
@@ -443,12 +427,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 ? findNearestPath(creep.pos, [
                     ...storage,
                     ...collectingCreeps
-                ], {
-                    maxRooms: 1,
-                    roomCallback,
-                    plainCost: 2,
-                    swampCost: 6,
-                })
+                ], { maxRooms: 1 })
                 : undefined;
             this.logger.info(`transitCollect: Secondary target: ${secondary?.goal}, cost ${secondary?.cost}.`);
             if (!nearest || secondary && nearest.cost - secondary.cost > 10)
@@ -485,11 +464,25 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
         } else
             throw new Error("Unexpected code path.");
-        this.pathCache = { targetId: destId, targetPath: nearest.path };
+        this.assignPath(nearest.goal, nearest.path);
         return true;
     }
     private transitIdle(nextEvalTimeOffset?: number): boolean {
         this.state = { mode: "idle", nextEvalTime: nextEvalTimeOffset ?? (Game.time + _.random(5)) };
+        return true;
+    }
+    private pathCache: { targetId: string; targetPath: RoomPosition[] } | undefined;
+    private assignPath(target: RoomObject & { id: string }, path?: RoomPosition[]): boolean {
+        if (!path) {
+            const { creep } = this;
+            const result = findPathTo(creep, target.pos, { maxRooms: 1 });
+            if (!result) return false;
+            path = result.path;
+        }
+        this.pathCache = {
+            targetId: target.id,
+            targetPath: path,
+        };
         return true;
     }
     private transitDistribute(): boolean {
@@ -501,18 +494,6 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const peers = c.size - (c.has(this.id) ? 1 : 0);
             return peers >= maxPeers;
         }
-        const roomCallback = (roomName: string, costMatrix?: CostMatrix) => {
-            const room = Game.rooms[roomName];
-            if (!room) {
-                this.logger.warning(`Unable to check room ${roomName}.`);
-                return false;
-            }
-            // We ignore provided costMatrix completely.
-            // We want to make behavior more consistent.
-            const costs = buildRoomCostMatrix(room);
-            costs.set(creep.pos.x, creep.pos.y, 0);
-            return costs;
-        };
         const canTransferEnergyToStructure = (s: CollectorCreepDistributeStructureType): boolean => {
             if (!("store" in s)) return false;
             const freeCap = s.store.getFreeCapacity(RESOURCE_ENERGY);
@@ -526,35 +507,19 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
         if (state.mode === "distribute") {
             // Keep incremental state update if current is already in distribute state.
-            const reEvaluatePath = (target: StructureController | ConstructionSite | CollectorCreepDistributeStructureType) => {
-                this.pathCache = {
-                    targetId: target.id,
-                    targetPath: creep.pos.findPathTo(target.pos, {
-                        maxRooms: 1,
-                        costCallback: (n, c) => roomCallback(n, c) || c,
-                        plainCost: 2,
-                        swampCost: 6,
-                    })
-                };
-            }
             if ("controllerId" in state) {
                 const c = Game.getObjectById(state.controllerId);
-                if (c?.my) {
-                    reEvaluatePath(c);
+                if (c?.my && this.assignPath(c))
                     return true;
-                }
             } else if ("constructionSiteId" in state) {
                 const s = Game.getObjectById(state.constructionSiteId);
-                if (s && s.progress < s.progressTotal) {
-                    reEvaluatePath(s);
+                if (s && s.progress < s.progressTotal && this.assignPath(s))
                     return true;
-                }
             } else if ("structureId" in state) {
                 const st = Game.getObjectById(state.structureId);
                 const minFreeCap = st instanceof StructureSpawn ? 10 : 0;
                 if (st && ("store" in st && st.store.getFreeCapacity(RESOURCE_ENERGY) > minFreeCap || structureNeedsRepair(st))) {
-                    reEvaluatePath(st);
-                    return true;
+                    if (this.assignPath(st)) return true;
                 }
             }
         }
@@ -614,12 +579,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     ...constructionSites,
                 ];
             }
-            let nearest = findNearestPath<CollectorCreepDistributeDestType>(creep.pos, goals, {
-                maxRooms: 1,
-                roomCallback: roomCallback,
-                plainCost: 2,
-                swampCost: 6,
-            });
+            let nearest = findNearestPath<CollectorCreepDistributeDestType>(creep.pos, goals, { maxRooms: 1 });
             if (!nearest) {
                 // No goal.
                 this.logger.info(`transitDistribute: No primary goal.`);
@@ -644,12 +604,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     const group = targetGroups[groupIndex ?? 0];
                     const [name, , sts] = group;
                     // this.logger.warning(`${pos}/${_(possibilityCumSum).last()!} --> ${targetGroups.map(g => `${g[0]}: ${g[1]}`)} --> ${group[0]}`);
-                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), {
-                        maxRooms: 1,
-                        roomCallback: roomCallback,
-                        plainCost: 2,
-                        swampCost: 6,
-                    });
+                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), { maxRooms: 1 });
                     if (nearest) {
                         this.logger.info(`transitDistribute: Found secondary goal (${name}).`);
                         break;
@@ -665,20 +620,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 this.state = { mode: "distribute", constructionSiteId: nearest.goal.id, destId, nextEvalTime };
             else
                 this.state = { mode: "distribute", structureId: nearest.goal.id as Id<any>, destId, nextEvalTime };
-            this.pathCache = { targetId: destId, targetPath: nearest.path };
+            this.assignPath(nearest.goal, nearest.path);
             return true;
         }
         if (controller?.my) {
             this.state = { mode: "distribute", controllerId: controller.id, destId: controller.id, nextEvalTime }
-            this.pathCache = {
-                targetId: controller.id,
-                targetPath: creep.pos.findPathTo(controller.pos, {
-                    maxRooms: 1,
-                    costCallback: (n, c) => roomCallback(n, c) || c,
-                    plainCost: 2,
-                    swampCost: 6,
-                })
-            };
+            if (!this.assignPath(controller)) {
+                this.logger.warning(`Failed to arrange a path to the controller: ${controller}.`);
+                return false;
+            }
             return true;
         }
         return false;

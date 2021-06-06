@@ -45,6 +45,7 @@ let roomCostMatrixCache: undefined | {
 
 export interface RoomCostMatrixOptions {
     noEvadeHostileCreeps?: boolean;
+    ignores?: RoomPosition[];
 }
 
 export function buildRoomCostMatrix(room: Room, options?: RoomCostMatrixOptions): CostMatrix {
@@ -55,7 +56,7 @@ export function buildRoomCostMatrix(room: Room, options?: RoomCostMatrixOptions)
             roomCostMatrixNoEvadeHostileCreeps: {}
         };
     }
-    const { noEvadeHostileCreeps } = options || {};
+    const { noEvadeHostileCreeps, ignores } = options || {};
     const costCache = noEvadeHostileCreeps ? roomCostMatrixCache.roomCostMatrixNoEvadeHostileCreeps : roomCostMatrixCache.roomCostMatrix;
     let cost = costCache[room.name];
     // if (cost) console.log("Cache hit " + room);
@@ -67,33 +68,67 @@ export function buildRoomCostMatrix(room: Room, options?: RoomCostMatrixOptions)
         if (!noEvadeHostileCreeps) evadeHostileCreeps(room, cost);
         costCache[room.name] = cost;
     }
-    return cost.clone();
+    const result = cost.clone();
+    if (ignores) {
+        for (const pos of ignores) {
+            result.set(pos.x, pos.y, 0);
+        }
+    }
+    return result;
 }
 
-export function buildPathFinderGoals<T extends RoomObject>(goals: _.List<T>): Array<{ pos: RoomPosition; range: number, roomObject: T }> {
+export function buildPathFinderGoals<T extends RoomPosition | HasRoomPosition>(goals: _.List<T>): Array<{ pos: RoomPosition; range: number, goal: T }> {
     return _(goals).map(g => {
-        return { pos: g.pos, range: 1, roomObject: g };
+        const pos = g instanceof RoomPosition ? g : g.pos;
+        return { pos: pos, range: 1, goal: g };
     }).value();
 }
 
-export function findNearestPath<T extends RoomObject>(origin: RoomPosition, goals: _.List<T>, opts?: PathFinderOpts): {
-    goal: T;
+export interface HasRoomPosition {
+    pos: RoomPosition;
+}
+
+export interface FindPathResult {
     path: RoomPosition[];
     cost: number;
-} | undefined {
+}
+
+export function findNearestPath<T extends RoomPosition | HasRoomPosition>(origin: RoomPosition | HasRoomPosition, goals: _.List<T>, opts?: PathFinderOpts): FindPathResult & { goal: T; } | undefined {
+    const originPos = "pos" in origin ? origin.pos : origin;
+    const localOptions: PathFinderOpts = {
+        plainCost: 2,
+        swampCost: 10,
+        roomCallback: roomName => {
+            const room = Game.rooms[roomName];
+            if (!room) {
+                // this.logger.warning(`Unable to check room ${roomName}.`);
+                return false;
+            }
+            return buildRoomCostMatrix(room, { ignores: [originPos] });
+        },
+        ...opts,
+    };
     const rawGoals = buildPathFinderGoals(goals);
     // No goals.
     if (!rawGoals.length) return undefined;
-    const result = PathFinder.search(origin, rawGoals, opts);
+    const result = PathFinder.search(originPos, rawGoals, localOptions);
     if (result.incomplete) return undefined;
-    const lastPos = _(result.path).last() || origin;
+    const lastPos = _(result.path).last() || originPos;
     const goal = _(rawGoals).minBy(g => Math.abs(lastPos.getRangeTo(g.pos) - g.range));
     if (!goal) throw new Error("Unexpected failure when recovering RoomObject from position.");
     // console.log("findNearestPath -> " + JSON.stringify(result.path));
     // console.log("findNearestPath -> " + result.cost);
     return {
-        goal: goal.roomObject,
+        goal: goal.goal,
         path: result.path,
         cost: result.cost
     };
 }
+
+
+export function findPathTo(origin: RoomPosition | HasRoomPosition, goal: RoomPosition | HasRoomPosition, opts?: PathFinderOpts): FindPathResult | undefined {
+    const result = findNearestPath(origin, [goal], opts);
+    if (!result) return undefined;
+    return result;
+}
+
