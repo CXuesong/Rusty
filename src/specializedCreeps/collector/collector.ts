@@ -136,8 +136,19 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         }
     }
     private transitCollect(): boolean {
-        const { creep } = this;
+        const { creep, state } = this;
         const { room } = creep;
+        if (state.mode === "collect") {
+            // Keep incremental state update if current is already in collect state.
+            const target = Game.getObjectById(state.targetId);
+            if (target) {
+                if (target instanceof Creep) {
+                } else if (target instanceof StructureStorage) {
+                } else if (isCollectableFrom(target, creep.pos) && this.assignPath(target)) {
+                    return true;
+                }
+            }
+        }
         const untargeted = _(getRoomMemory(room).untargetedCollectables)
             .entries().filter(([id, since]) => Game.time >= since + 10 && !getTargetingCollectors(id as Id<any>).size)
             .map(([id]) => Game.getObjectById(id as Id<CollectorCreepCollectPrimaryTargetType>)!)
