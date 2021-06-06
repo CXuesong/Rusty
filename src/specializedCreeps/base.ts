@@ -20,10 +20,10 @@ export function buildCreepMemory<TState extends Record<string, any> = {}>(rustyT
     };
 }
 
-export interface SpecializedCreepType {
+export interface SpecializedCreepType<TState extends Record<string, any> = {}> {
     readonly rustyType: string;
     readonly spawn: (spawn: StructureSpawn) => string | SpecializedSpawnCreepErrorCode;
-    new(id: Id<Creep>): SpecializedCreepBase<any>;
+    new(id: Id<Creep>): SpecializedCreepBase<TState>;
 }
 
 export function isSpecializedCreepOf(creep: Creep, type: SpecializedCreepType): boolean {
@@ -65,7 +65,7 @@ export abstract class SpecializedCreepBase<TState extends Record<string, any> = 
     }
     public get state(): TState {
         const c = Game.getObjectById(this.id);
-        return  c ? c.memory.rusty as TState : this._stateReplicate;
+        return c ? c.memory.rusty as TState : this._stateReplicate;
     }
     public set state(value: TState) {
         // Makes sure underlying Creep exists.

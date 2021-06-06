@@ -1,5 +1,8 @@
 import _ from "lodash";
-import { CollectorCreep, CollectorCreepState, structureNeedsRepair, __internal__debugInfo } from "src/specializedCreeps/collector";
+import { CollectorCreep } from "src/specializedCreeps/collector";
+import { structureNeedsRepair } from "src/specializedCreeps/collector/predicates";
+import { CollectorCreepState } from "src/specializedCreeps/collector/state";
+import * as CollectorTargetTracking from "src/specializedCreeps/collector/targetTracking";
 import { DefenderCreep, DefenderCreepState } from "src/specializedCreeps/defender";
 import { __internal__getSpecializedCreepsCache } from "src/specializedCreeps/registry";
 import { initializeCreepMemory } from "src/specializedCreeps/spawn";
@@ -45,8 +48,8 @@ export class ConsoleUtils {
         return __internal__getSpecializedCreepsCache();
     }
 
-    public static get collectorDestCache(): unknown {
-        return __internal__debugInfo.getOccupiedDests();
+    public static get collectorTargetTracking(): unknown {
+        return CollectorTargetTracking;
     }
 
     public static showStructureRepairStatus(room?: Room | string | Array<Room | string>): Record<string, number> {
