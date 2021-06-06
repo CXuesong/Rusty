@@ -12,6 +12,7 @@ declare global {
 
     interface RoomMemory {
         rusty: unknown;
+        rustyCollector: unknown;
     }
 }
 

@@ -266,8 +266,17 @@ export const __internal__debugInfo = {
     getOccupiedDests: () => occupiedDests
 };
 
-// <Id<CollectorCreepCollectPrimaryDestType>, untargetedSince>
-const untargetedCollectables: Partial<Record<string, Record<string, number>>> = {};
+interface RustyCollectorRoomMemory {
+    // <Id<CollectorCreepCollectPrimaryDestType>, untargetedSince>
+    untargetedCollectables: Record<string, number>;
+}
+
+function getRoomMemory(room: Room): RustyCollectorRoomMemory {
+    let memory = room.memory.rustyCollector as RustyCollectorRoomMemory;
+    if (!memory || typeof memory !== "object")
+        room.memory.rustyCollector = memory = { untargetedCollectables: {} };
+    return memory;
+}
 
 export function onNextFrame() {
     for (const room of _(Game.rooms).values()) {
@@ -277,9 +286,10 @@ export function onNextFrame() {
             ...room.find(FIND_TOMBSTONES),
         ].filter(s => !getTargetingCollectors(s.id).size && isCollectableFrom(s))
             .map(t => t.id);
-        const prevUntargeted = untargetedCollectables[room.name] || {};
+        const memory = getRoomMemory(room);
+        const prevUntargeted = memory.untargetedCollectables;
         const nextUntargeted = _(untargeted).keyBy(id => id).mapValues(id => prevUntargeted[id] ?? Game.time).value();
-        untargetedCollectables[room.name] = nextUntargeted;
+        memory.untargetedCollectables = nextUntargeted;
     }
 }
 
@@ -405,7 +415,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private transitCollect(): boolean {
         const { creep } = this;
         const { room } = creep;
-        const untargeted = _(untargetedCollectables[room.name] || {})
+        const untargeted = _(getRoomMemory(room).untargetedCollectables)
             .entries().filter(([id, since]) => Game.time >= since + 10 && !getTargetingCollectors(id as Id<any>).size)
             .map(([id]) => Game.getObjectById(id as Id<CollectorCreepCollectPrimaryDestType>)!)
             .filter(s => !!s && isCollectableFrom(s, creep.pos))
