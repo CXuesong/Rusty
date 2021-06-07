@@ -77,7 +77,7 @@ export function buildRoomCostMatrix(room: Room, options?: RoomCostMatrixOptions)
     return result;
 }
 
-export function buildPathFinderGoals<T extends RoomPosition | HasRoomPosition>(goals: _.List<T>): Array<{ pos: RoomPosition; range: number, goal: T }> {
+export function buildPathFinderGoals<T extends HasRoomPosition = never>(goals: _.List<RoomPosition | T>): Array<{ pos: RoomPosition; range: number, goal: RoomPosition | T }> {
     return _(goals).map(g => {
         const pos = g instanceof RoomPosition ? g : g.pos;
         return { pos: pos, range: 1, goal: g };
@@ -93,7 +93,10 @@ export interface FindPathResult {
     cost: number;
 }
 
-export function findNearestPath<T extends RoomPosition | HasRoomPosition>(origin: RoomPosition | HasRoomPosition, goals: _.List<T>, opts?: PathFinderOpts): FindPathResult & { goal: T; } | undefined {
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<T>, opts?: PathFinderOpts): FindPathResult & { goal: T; } | undefined;
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<RoomPosition>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition; } | undefined;
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<RoomPosition | T>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition | T; } | undefined;
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<RoomPosition | T>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition | T; } | undefined {
     const originPos = "pos" in origin ? origin.pos : origin;
     const localOptions: PathFinderOpts = {
         plainCost: 2,

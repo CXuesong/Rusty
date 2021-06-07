@@ -180,15 +180,14 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 .map(c => c.creep)
                 .filter(c => {
                     // We still need some time to arrive the target creep. Target can collect some more energy meanwhile.
-                    const energyCap = c.store.getCapacity(RESOURCE_ENERGY);
+                    const energyCap = c.store.getCapacity();
                     const energyEst = Math.max(energyCap, c.store.energy + creep.pos.getRangeTo(c) * RANGE_DISTANCE_RATIO * c.getActiveBodyparts(WORK));
-                    return energyEst / energyCap >= 0.6 || energyEst / creep.store.getCapacity(RESOURCE_ENERGY) >= 0.8
+                    return energyEst / energyCap >= 0.6 || energyEst / creep.store.getCapacity() >= 0.8
                 })
                 .value();
             // Also take a look at the storage at this point, before wandering away.
-            // TODO schedule a proper storage-taking behavior.
-            const storage = room.storage && room.storage.store.energy > creep.store.getCapacity(RESOURCE_ENERGY) * 0.8
-                ? [/* room.storage */] : [];
+            const storage = room.storage && room.storage.store.energy > creep.store.getFreeCapacity() * 0.8
+                ? [room.storage] : [];
             const secondary = collectingCreeps.length
                 ? findNearestPath(creep.pos, [
                     ...storage,
@@ -401,7 +400,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             case "idle":
                 return true;
             case "collect":
-                if (!creep.store.getFreeCapacity(RESOURCE_ENERGY)) {
+                if (!creep.store.getFreeCapacity()) {
                     this.logger.trace("Reached max energy cap. transitDistribute.");
                     this.transitDistribute() || this.transitIdle();
                     return false;
@@ -571,13 +570,12 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             }
             return;
         } if (result === ERR_NOT_ENOUGH_RESOURCES) {
-            if (!this.transitCollect)
+            if (!this.transitCollect())
                 this.transitIdle();
             return;
         }
         if (result === ERR_FULL) {
-            if (creep.store.energy > 25 && this.transitDistribute()) return;
-            if (creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0 && this.transitCollect()) return;
+            if (creep.store.getUsedCapacity() > 0 && this.transitDistribute()) return;
             this.transitIdle();
             return;
         }
