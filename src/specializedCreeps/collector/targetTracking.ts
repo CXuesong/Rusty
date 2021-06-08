@@ -79,6 +79,7 @@ export function onNextFrame() {
             // ...room.find(FIND_SOURCES),
             ...room.find(FIND_DROPPED_RESOURCES),
             ...room.find(FIND_TOMBSTONES),
+            ...room.find(FIND_RUINS),
         ].filter(s => !getTargetingCollectors(s.id).size && isCollectableFrom(s))
             .map(t => t.id);
         const memory = getRoomMemory(room);

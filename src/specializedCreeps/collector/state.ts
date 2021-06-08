@@ -1,6 +1,8 @@
 interface CollectorCreepStateBase {
     mode: string;
     isWalking?: boolean;
+    /** Prevent creeps from transferring resource in / out immediately. */
+    lastTarget?: Id<RoomObject>;
 }
 
 interface CollectorCreepStateIdle extends CollectorCreepStateBase {
@@ -8,8 +10,8 @@ interface CollectorCreepStateIdle extends CollectorCreepStateBase {
     nextEvalTime: number;
 }
 
-export type CollectorCreepCollectPrimaryTargetType = Source | Tombstone | Resource;
-export type CollectorCreepCollectSecondaryTargetType = Creep | StructureStorage;
+export type CollectorCreepCollectPrimaryTargetType = Source | Tombstone | Ruin | Resource;
+export type CollectorCreepCollectSecondaryTargetType = Creep | StructureLink | StructureStorage;
 export type CollectorCreepCollectTargetType = CollectorCreepCollectPrimaryTargetType | CollectorCreepCollectSecondaryTargetType;
 
 // General structure: has hit point, may store energy.
@@ -21,7 +23,8 @@ export type CollectorCreepDistributeStructureType =
     | StructureRoad
     | StructureWall
     | StructureContainer
-    | StructureStorage;
+    | StructureStorage
+    | StructureLink;
 
 export type CollectorCreepDistributeTargetType =
     | ConstructionSite
@@ -53,7 +56,7 @@ interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollec
 }
 
 interface CollectorCreepStateCollectStorage extends CollectorCreepStateCollect {
-    readonly storageId: Id<StructureStorage | Tombstone | Ruin>;
+    readonly storageId: Id<StructureStorage | StructureLink | Tombstone | Ruin>;
     sourceDistance: 0;
 }
 

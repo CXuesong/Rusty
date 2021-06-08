@@ -69,7 +69,7 @@ export function estimateResourceDecayRatio(target: CollectorCreepCollectTargetTy
     return 1;
 }
 
-export function isCollectableFrom(target: CollectorCreepCollectPrimaryTargetType, srcPos?: RoomPosition): boolean {
+export function isCollectableFrom(target: CollectorCreepCollectTargetType, srcPos?: RoomPosition): boolean {
     const decayRatio = srcPos ? estimateResourceDecayRatio(target, srcPos) : 1;
     let storeInfo: { energy: number; rest: number; maxCollectors: number; };
     if ("store" in target) {
@@ -101,4 +101,8 @@ export function isCollectableFrom(target: CollectorCreepCollectPrimaryTargetType
     if (targetingCollectors.size >= maxCollectors) return false;
     const collectorCap = _([...targetingCollectors]).map(id => Game.getObjectById(id)?.store.getFreeCapacity() || 0).sum();
     return collectorCap < energyAmount + restAmount;
+}
+
+export function canStorageAcceptEnergy(storage: StructureStorage): boolean {
+    return storage.store.getFreeCapacity(RESOURCE_ENERGY) / storage.store.getCapacity(RESOURCE_ENERGY) < 0.3;
 }

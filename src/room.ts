@@ -6,6 +6,7 @@ import { DefenderCreep } from "./specializedCreeps/defender";
 import { getSpecializedCreep } from "./specializedCreeps/registry";
 import { Logger } from "./utility/logger";
 import { visualTextMultiline } from "./utility/visual";
+import { onNextFrame as onLinkNextFrame } from "./structures/link";
 
 interface RustyRoomMemory {
     nextSpawnTime?: number;
@@ -131,6 +132,7 @@ export function onRoomNextFrame(room: Room): void {
             }
         }
     }
+    onLinkNextFrame(room);
     // Update room indicator
     if (Game.time % 20 === 0) {
         const creeps = room.find(FIND_MY_CREEPS);
