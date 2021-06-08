@@ -1,7 +1,11 @@
 import _ from "lodash/index";
+import { Logger } from "src/utility/logger";
 
 export const LINK_RESOURCE_HIGH_LEVEL = 0.8;
-export const LINK_RESOURCE_LOW_LEVEL = 0.2;
+export const LINK_RESOURCE_RESERVE_LEVEL = 0.15;
+export const LINK_RESOURCE_LOW_LEVEL = 0.1;
+
+const logger = new Logger("Rusty.Structures.Link");
 
 interface RustyLinkRoomMemory {
     nextLinkCheckTime?: number;
@@ -27,7 +31,12 @@ export function onNextFrame(room: Room) {
                 .filter(l => l.store.energy <= l.store.getCapacity(RESOURCE_ENERGY) * LINK_RESOURCE_LOW_LEVEL)
                 .minBy(l => hiLink.pos.getRangeTo(l));
             const hiLinkCap = hiLink.store.getCapacity(RESOURCE_ENERGY);
-            if (loLink) hiLink.transferEnergy(loLink, hiLink.store.energy - Math.ceil(hiLinkCap * LINK_RESOURCE_LOW_LEVEL + 10));
+            if (loLink) {
+                const amount = hiLink.store.energy - Math.ceil(hiLinkCap * LINK_RESOURCE_RESERVE_LEVEL);
+                logger.info(`transferEnergy(${hiLink} -> ${loLink}, ${amount})`);
+                const result = hiLink.transferEnergy(loLink, amount);
+                if (result !== OK) logger.warning(`transferEnergy(${hiLink} -> ${loLink}, ${amount}) -> ${result}`);
+            }
         }
     }
 }
