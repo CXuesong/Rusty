@@ -1,12 +1,9 @@
-interface CollectorCreepStateBase {
-    mode: string;
-    isWalking?: boolean;
-    /** Prevent creeps from transferring resource in / out immediately. */
-    lastTarget?: Id<RoomObject>;
+export interface CollectorCreepOperationBase {
+    opName: string;
 }
 
-interface CollectorCreepStateIdle extends CollectorCreepStateBase {
-    mode: "idle";
+interface CollectorCreepOperationIdle extends CollectorCreepOperationBase {
+    opName: "idle";
     nextEvalTime: number;
 }
 
@@ -33,61 +30,78 @@ export type CollectorCreepDistributeTargetType =
 
 export type CollectorTargetId = Id<RoomObject>;
 
-interface CollectorCreepStateCollect extends CollectorCreepStateBase {
-    mode: "collect";
+interface CollectorCreepStateCollect extends CollectorCreepOperationBase {
+    opName: "collect";
     targetId: Id<CollectorCreepCollectTargetType>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
-interface CollectorCreepStateCollectSource extends CollectorCreepStateCollect {
+interface CollectorCreepOperationCollectSource extends CollectorCreepStateCollect {
     readonly sourceId: Id<Source>;
     sourceDistance: 0;
 }
 
 // Resource dropped.
-interface CollectorCreepStateCollectResource extends CollectorCreepStateCollect {
+interface CollectorCreepOperationCollectResource extends CollectorCreepStateCollect {
     readonly resourceId: Id<Resource>;
 }
 
-interface CollectorCreepStateCollectCreepRelay extends CollectorCreepStateCollect {
+interface CollectorCreepOperationCollectCreepRelay extends CollectorCreepStateCollect {
     readonly sourceCreepId: Id<Creep>;
     sourceDistance: number;
 }
 
-interface CollectorCreepStateCollectStorage extends CollectorCreepStateCollect {
+interface CollectorCreepOperationCollectStorage extends CollectorCreepStateCollect {
     readonly storageId: Id<StructureStorage | StructureLink | Tombstone | Ruin>;
     sourceDistance: 0;
 }
 
-interface CollectorCreepStateDistribute extends CollectorCreepStateBase {
-    mode: "distribute";
+interface CollectorCreepStateDistribute extends CollectorCreepOperationBase {
+    opName: "distribute";
     targetId: Id<CollectorCreepDistributeTargetType>;
     /** Expiry at which the target and path cache can be considered as "invalidated". */
     nextEvalTime: number;
 }
 
-interface CollectorCreepStateDistributeStructure extends CollectorCreepStateDistribute {
+interface CollectorCreepOperationDistributeStructure extends CollectorCreepStateDistribute {
     structureId: Id<CollectorCreepDistributeStructureType>;
     targetId: Id<CollectorCreepDistributeStructureType>;
 }
 
-interface CollectorCreepStateDistributeController extends CollectorCreepStateDistribute {
+interface CollectorCreepOperationDistributeController extends CollectorCreepStateDistribute {
     controllerId: Id<StructureController>;
     targetId: Id<StructureController>;
 }
 
-interface CollectorCreepStateDistributeConstruction extends CollectorCreepStateDistribute {
+interface CollectorCreepOperationDistributeConstruction extends CollectorCreepStateDistribute {
     constructionSiteId: Id<ConstructionSite>;
     targetId: Id<ConstructionSite>;
 }
 
-export type CollectorCreepState
-    = CollectorCreepStateIdle
-    | CollectorCreepStateCollectSource
-    | CollectorCreepStateCollectResource
-    | CollectorCreepStateCollectCreepRelay
-    | CollectorCreepStateCollectStorage
-    | CollectorCreepStateDistributeStructure
-    | CollectorCreepStateDistributeController
-    | CollectorCreepStateDistributeConstruction;
+export type CollectorCreepOperation
+    = CollectorCreepOperationIdle
+    | CollectorCreepOperationCollectSource
+    | CollectorCreepOperationCollectResource
+    | CollectorCreepOperationCollectCreepRelay
+    | CollectorCreepOperationCollectStorage
+    | CollectorCreepOperationDistributeStructure
+    | CollectorCreepOperationDistributeController
+    | CollectorCreepOperationDistributeConstruction;
+
+export type CollectorCreepTimedOperation = CollectorCreepOperation & {
+    /** Operation start time. */
+    startTime: number;
+}
+
+export type CollectorCreepEndTimedOperation = CollectorCreepTimedOperation & {
+    /** Operation end time. */
+    endTime: number;
+}
+
+export interface CollectorCreepState {
+    isWalking?: boolean;
+    operation: CollectorCreepTimedOperation
+    /** Prevent creeps from transferring resource in / out immediately. */
+    recentOperations: CollectorCreepEndTimedOperation[];
+}

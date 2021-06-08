@@ -2,7 +2,7 @@ import _ from "lodash/index";
 import { Logger } from "src/utility/logger";
 import { enumSpecializedCreeps, SpecializedCreepType } from "../base";
 import { getRoomMemory } from "./memory";
-import { isCollectableFrom } from "./predicates";
+import { estimateCollectableAmount, isCollectableFrom } from "./predicates";
 import { CollectorCreepState, CollectorTargetId } from "./state";
 
 let CollectorCreep: SpecializedCreepType<CollectorCreepState>;
@@ -45,10 +45,11 @@ export function getTargetingCollectors(id: CollectorTargetId): ReadonlySet<Id<Cr
     if (!occupiedDests) {
         occupiedDests = new Map();
         for (const c of enumSpecializedCreeps(CollectorCreep)) {
-            if (c.state.mode === "collect")
-                addTargetingCollector(c.state.targetId, c.id);
-            else if (c.state.mode === "distribute")
-                addTargetingCollector(c.state.targetId, c.id);
+            const { operation } = c.state;
+            if (operation.opName === "collect")
+                addTargetingCollector(operation.targetId, c.id);
+            else if (operation.opName === "distribute")
+                addTargetingCollector(operation.targetId, c.id);
         }
     }
     return occupiedDests.get(id) || emptySet;
@@ -73,14 +74,17 @@ export function removeTargetingCollector(id: CollectorTargetId, collector: Id<Cr
 }
 
 export function onNextFrame() {
-    // Track untracked sources.
+    // Track untracked (or not sufficiently-tracked) sources.
     for (const room of _(Game.rooms).values()) {
         const untargeted = [
             // ...room.find(FIND_SOURCES),
             ...room.find(FIND_DROPPED_RESOURCES),
             ...room.find(FIND_TOMBSTONES),
             ...room.find(FIND_RUINS),
-        ].filter(s => !getTargetingCollectors(s.id).size && isCollectableFrom(s))
+        ].filter(s => isCollectableFrom(s) && (
+            _([...getTargetingCollectors(s.id)])
+                .map(id => Game.getObjectById(id))
+                .sumBy(c => c?.store.getFreeCapacity() || 0)) <= 0.7 * estimateCollectableAmount(s))
             .map(t => t.id);
         const memory = getRoomMemory(room);
         const prevUntargeted = memory.untargetedCollectables;

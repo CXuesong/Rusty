@@ -30,7 +30,10 @@ export class ConsoleUtils {
             if (mode !== "force" && v.memory?.rustyType) continue;
             const body = _(v.body).groupBy(e => e.type).mapValues(e => e.length).value() as Partial<Record<BodyPartConstant, number>>;
             if (body.move && body.carry)
-                initializeCreepMemory<CollectorCreepState>(v.name, CollectorCreep.rustyType, { mode: "idle", nextEvalTime: Game.time });
+                initializeCreepMemory<CollectorCreepState>(v.name, CollectorCreep.rustyType, {
+                    operation: { startTime: Game.time, opName: "idle", nextEvalTime: Game.time },
+                    recentOperations: [],
+                });
             else if (body.move && body.ranged_attack)
                 initializeCreepMemory<DefenderCreepState>(v.name, DefenderCreep.rustyType, {});
             else {

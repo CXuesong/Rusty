@@ -1,5 +1,5 @@
 import _ from "lodash/index";
-import { CollectorCreepCollectTargetType, CollectorCreepCollectPrimaryTargetType } from "./state";
+import { CollectorCreepCollectTargetType } from "./state";
 import { getTargetingCollectors } from "./targetTracking";
 
 const MIN_COLLECTABLE_ENERGY_NEAR = 5;
@@ -62,11 +62,23 @@ export function estimateResourceDecayRatio(target: CollectorCreepCollectTargetTy
     if (target instanceof Resource) {
         return Math.pow(1 - 1 / ENERGY_DECAY, eta);
     }
-    if (target instanceof Tombstone) {
+    if (target instanceof Tombstone || target instanceof Ruin) {
         const decayTime = eta - target.ticksToDecay;
         return decayTime > 0 ? Math.pow(1 - 1 / ENERGY_DECAY, eta) : 1;
     }
     return 1;
+}
+
+export function estimateCollectableAmount(target: CollectorCreepCollectTargetType, srcPos?: RoomPosition): number {
+    const decayRatio = srcPos ? estimateResourceDecayRatio(target, srcPos) : 1;
+    if ("store" in target) return (_(target.store).values().sum() || 0) * decayRatio;
+    if (target instanceof Resource) return target.amount * decayRatio;
+    if (target instanceof Source) {
+        if (srcPos && target.ticksToRegeneration < srcPos.getRangeTo(target) * RANGE_DISTANCE_RATIO)
+            return target.energyCapacity;
+        return target.energy;
+    }
+    throw new TypeError("Unexpected target type.");
 }
 
 export function isCollectableFrom(target: CollectorCreepCollectTargetType, srcPos?: RoomPosition): boolean {
@@ -75,7 +87,7 @@ export function isCollectableFrom(target: CollectorCreepCollectTargetType, srcPo
     if ("store" in target) {
         storeInfo = {
             energy: target.store.energy * decayRatio,
-            rest: (_(target.store).values().sum() || 0) * decayRatio,
+            rest: ((_(target.store).values().sum() || 0) - target.store.energy) * decayRatio,
             maxCollectors: /* target instanceof Creep ? 1 : */ 6,
         };
     } else if (target instanceof Resource) {
