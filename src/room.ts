@@ -4,9 +4,9 @@ import { isSpecializedCreepOf } from "./specializedCreeps";
 import { CollectorCreep, CollectorCreepVariant } from "./specializedCreeps/collector";
 import { DefenderCreep } from "./specializedCreeps/defender";
 import { getSpecializedCreep } from "./specializedCreeps/registry";
+import { onNextFrame as onLinkNextFrame } from "./structures/link";
 import { Logger } from "./utility/logger";
 import { visualTextMultiline } from "./utility/visual";
-import { onNextFrame as onLinkNextFrame } from "./structures/link";
 
 interface RustyRoomMemory {
     nextSpawnTime?: number;
@@ -106,27 +106,18 @@ export function onRoomNextFrame(room: Room): void {
                 = (collectorCount.normal || 0)
                 + (collectorCount.tall || 0) * 1.3
                 + (collectorCount.grande || 0) * 2
-                + (collectorCount.venti || 0) * 3.2;
+                + (collectorCount.venti || 0) * 3.2
+                + (collectorCount.trenta || 0) * 4;
             if (actc < expc) {
                 // Spawn collectors if necessary.
                 spawns.remove(trySpawn(spawns, s => {
                     // Try spawn a bigger one first.
-                    // 70%
-                    if (_.random(true) < 0.7) {
-                        const r = CollectorCreep.spawn(s, "venti");
-                        if (typeof r === "string") return r;
+                    for (const variant of ["trenta", "venti", "grande", "tall"] as const) {
+                        if (_.random(true) < 0.7) {
+                            const r = CollectorCreep.spawn(s, variant);
+                            if (typeof r === "string") return r;
+                        }
                     }
-                    // 21% +
-                    if (_.random(true) < 0.7) {
-                        const r = CollectorCreep.spawn(s, "grande");
-                        if (typeof r === "string") return r;
-                    }
-                    // 15% +
-                    if (_.random(true) < 0.7) {
-                        const r = CollectorCreep.spawn(s, "tall");
-                        if (typeof r === "string") return r;
-                    }
-                    // 2% +
                     return CollectorCreep.spawn(s, "normal");
                 }));
             }
@@ -181,7 +172,7 @@ function renderRoomStatus(room: Room): void {
         .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
-        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0}) (${actc && Math.round(actc * 10) / 10} / [${expc}])`,
+        `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0} Tr:${ccc.trenta || 0}) (${actc && Math.round(actc * 10) / 10} / [${expc}])`,
         cpc ? `Controller: ${cpc}/${cpt} (${cpc && cpt && Math.round(cpc! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
         "",
         "Decaying creeps",

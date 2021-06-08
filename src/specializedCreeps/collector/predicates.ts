@@ -3,8 +3,8 @@ import { CollectorCreepCollectTargetType } from "./state";
 import { getTargetingCollectors } from "./targetTracking";
 
 const MIN_COLLECTABLE_ENERGY_NEAR = 5;
-const AGGRESSIVE_UPGRADE_MODE = true;
-const RANGE_DISTANCE_RATIO = 1.6;
+const AGGRESSIVE_UPGRADE_MODE = false;
+const RANGE_DISTANCE_RATIO = 2;
 
 export function structureNeedsRepair(structure: Structure): "now" | "yes" | "later" | false {
     // some WALL does not have hitsMax

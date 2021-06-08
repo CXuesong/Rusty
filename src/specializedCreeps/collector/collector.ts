@@ -15,7 +15,8 @@ export const MIN_COLLECTABLE_ENERGY = 20;
 // const MAX_SOURCE_REGENERATION_WAIT = 20;
 const RANGE_DISTANCE_RATIO = 1.6;
 
-export type CollectorCreepVariant = "normal" | "tall" | "grande" | "venti";
+export const collectorCreepVariants = ["normal", "tall", "grande", "venti", "trenta"] as const;
+export type CollectorCreepVariant = (typeof collectorCreepVariants)[number];
 
 const variantDefinitions: Record<CollectorCreepVariant, { body: BodyPartProfile, prefix: string }> = {
     normal: {
@@ -52,6 +53,15 @@ const variantDefinitions: Record<CollectorCreepVariant, { body: BodyPartProfile,
             [CARRY]: 4,
             [MOVE]: 8,
             [WORK]: 6,
+        }
+    },
+    trenta: {
+        // 1900
+        prefix: "CTr:",
+        body: {
+            [CARRY]: 6,
+            [MOVE]: 12,
+            [WORK]: 10,
         }
     }
 };
@@ -108,6 +118,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             if (body.move === 4) this._variant = "tall";
             else if (body.move === 6) this._variant = "grande";
             else if (body.move === 8) this._variant = "venti";
+            else if (body.move === 12) this._variant = "trenta";
             else this._variant = "normal";
         }
         return this._variant;
@@ -147,11 +158,13 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     }
     private recentlyCollectedFrom(targetId: Id<RoomObject>): boolean {
         const { state } = this;
-        return !!state.recentOperations.find(o => o.opName === "collect" && o.targetId === targetId);
+        return state.operation.opName === "collect" && state.operation.targetId === targetId
+            || !!state.recentOperations.find(o => o.opName === "collect" && o.targetId === targetId)
     }
     private recentlyDistributedTo(targetId: Id<RoomObject>): boolean {
         const { state } = this;
-        return !!state.recentOperations.find(o => o.opName === "distribute" && o.targetId === targetId);
+        return state.operation.opName === "distribute" && state.operation.targetId === targetId
+            || !!state.recentOperations.find(o => o.opName === "distribute" && o.targetId === targetId)
     }
     private transitCollect(): boolean {
         const { creep, state } = this;
@@ -355,13 +368,15 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
         let controllerPriority = 0;
         const { controller } = room;
         if (controller?.my) {
-            const targetingCollectors = getTargetingCollectors(controller.id).size;
-            if (targetingCollectors < 1 || controller.ticksToDowngrade <= 7200 && targetingCollectors < 4) {
+            const targetingWorkParts = _([...getTargetingCollectors(controller.id)])
+                .map(id => Game.getObjectById(id)?.getActiveBodyparts(WORK) || 0)
+                .sum();
+            if (targetingWorkParts < 2 || controller.ticksToDowngrade <= 7200 && targetingWorkParts < 8) {
                 // Resetting downgrade timer is priority.
                 controllerPriority = 1;
-            } else if (targetingCollectors < 6) {
+            } else if (targetingWorkParts < 16) {
                 controllerPriority = 0.5;
-            } else if (targetingCollectors < 10) {
+            } else if (targetingWorkParts < 24) {
                 controllerPriority = 0.1;
             }
         }
@@ -420,16 +435,17 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                         targetGroups.remove(group);
                     }
                 }
-                if (!nearest) return false;
             }
-            const targetId = nearest.goal.id as Id<any>;
-            this.logger.info(`Distribute ${nearest.goal}.`);
-            if (nearest.goal instanceof ConstructionSite)
-                this.setStateOperation({ opName: "distribute", constructionSiteId: nearest.goal.id, targetId, nextEvalTime });
-            else
-                this.setStateOperation({ opName: "distribute", structureId: nearest.goal.id as Id<any>, targetId, nextEvalTime });
-            this.assignPath(nearest.goal, nearest.path);
-            return true;
+            if (nearest) {
+                const targetId = nearest.goal.id as Id<any>;
+                this.logger.info(`Distribute ${nearest.goal}.`);
+                if (nearest.goal instanceof ConstructionSite)
+                    this.setStateOperation({ opName: "distribute", constructionSiteId: nearest.goal.id, targetId, nextEvalTime });
+                else
+                    this.setStateOperation({ opName: "distribute", structureId: nearest.goal.id as Id<any>, targetId, nextEvalTime });
+                this.assignPath(nearest.goal, nearest.path);
+                return true;
+            }
         }
         if (creepHasEnergy && controller?.my) {
             this.setStateOperation({ opName: "distribute", controllerId: controller.id, targetId: controller.id, nextEvalTime });
