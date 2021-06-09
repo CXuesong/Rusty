@@ -24,7 +24,7 @@ loggerLevels.push(
 const runtimeStartTime = Date.now();
 let runtimeTicks = 0;
 let runtimeCpuTimeTotal = 0;
-(global as unknown as Record<string, unknown>)["RustyUtils"] = ConsoleUtils;
+global.RustyUtils = ConsoleUtils;
 
 export function loop() {
     const logger = new Logger("Rusty.Index.loop");

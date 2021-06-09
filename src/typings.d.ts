@@ -15,6 +15,9 @@ declare global {
         rustyCollector: unknown;
         rustyLink: unknown;
     }
+
+    /** Rusty console utility. */
+    var RustyUtils: unknown;
 }
 
 declare module "lodash/index" {
