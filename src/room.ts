@@ -5,8 +5,10 @@ import { CollectorCreep, CollectorCreepVariant } from "./specializedCreeps/colle
 import { DefenderCreep } from "./specializedCreeps/defender";
 import { getSpecializedCreep } from "./specializedCreeps/registry";
 import { onNextFrame as onLinkNextFrame } from "./structures/link";
+import { onNextFrame as onNukeNextFrame } from "./nuke";
 import { Logger } from "./utility/logger";
 import { visualTextMultiline } from "./utility/visual";
+import dayjs from "dayjs";
 
 interface RustyRoomMemory {
     nextSpawnTime?: number;
@@ -19,15 +21,19 @@ interface RoomTransientState {
     collectorCreepCount?: Partial<Record<CollectorCreepVariant, number>>;
     defenderCount?: number;
     controllerLastLevel?: number;
-    // Linear regression: y = a + bx
-    controllerProgressRegressionParams?: { n: number; sx: number; sy: number; sxy: number; sx2: number; a: number; b: number };
-    controllerProgress?: number;
-    controllerProgressTotal?: number;
-    controllerUpgradeEta?: number;
+    controllerUpgradeState?: "not-owned" | "no-upgrade" | {
+        // Linear regression: y = a + bx
+        progressRegressionParams: { n: number; sx: number; sy: number; sxy: number; sx2: number; a: number; b: number };
+        progress: number;
+        progressTotal: number;
+        upgradeEta?: number;
+    }
 }
 
 const logger = new Logger("Rusty.Room");
 const roomStateDict: Record<string, RoomTransientState> = {};
+// estimated value.
+const TICK_DURATION_SECONDS = 3.35;
 
 export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
     var hostiles = room.find(FIND_HOSTILE_CREEPS);
@@ -57,6 +63,7 @@ export function onRoomNextFrame(room: Room): void {
     const rusty = room.memory.rusty as RustyRoomMemory;
     const towers = room.find(FIND_MY_STRUCTURES, { filter: { structureType: STRUCTURE_TOWER } }) as StructureTower[];
     const { controller } = room;
+    onNukeNextFrame(room);
     if (towers.length) onTowersNextFrame(room, towers);
     const { nextSpawnTime } = rusty;
     if (nextSpawnTime == null || Game.time >= nextSpawnTime) {
@@ -134,25 +141,35 @@ export function onRoomNextFrame(room: Room): void {
         if (roomState.controllerLastLevel !== controller.level) {
             // Reset record after upgrade.
             roomState.controllerLastLevel = controller.level;
-            delete roomState.controllerProgressRegressionParams;
+            delete roomState.controllerUpgradeState;
         }
-        roomState.controllerProgress = controller.progress;
-        roomState.controllerProgressTotal = controller.progressTotal;
-        const cprp = roomState.controllerProgressRegressionParams || (roomState.controllerProgressRegressionParams = { n: 0, sx: 0, sy: 0, sxy: 0, sx2: 0, a: 0, b: 0 });
-        cprp.n++;
-        const n = cprp.n;
-        cprp.sx += n;
-        cprp.sx2 += n * n;
-        const y = controller.progressTotal - controller.progress;
-        cprp.sy += y;
-        cprp.sxy += n * y;
-        const { sx, sy, sx2, sxy } = cprp;
-        const b = cprp.b = (n * sxy - sx * sy) / (n * sx2 - sx * sx);
-        const a = cprp.a = (sy - b * sx) / n;
-        roomState.controllerUpgradeEta = n >= 3 ? Math.round(-a / b) - n : undefined;
+        if (controller.progressTotal == null) {
+            roomState.controllerUpgradeState = "no-upgrade";
+        } else {
+            let { controllerUpgradeState } = roomState;
+            if (typeof controllerUpgradeState !== "object")
+                controllerUpgradeState = roomState.controllerUpgradeState = {
+                    progress: 0,
+                    progressTotal: 0,
+                    progressRegressionParams: { n: 0, sx: 0, sy: 0, sxy: 0, sx2: 0, a: 0, b: 0 },
+                };
+            controllerUpgradeState.progress = controller.progress;
+            controllerUpgradeState.progressTotal = controller.progressTotal;
+            const cprp = controllerUpgradeState.progressRegressionParams;
+            cprp.n++;
+            const n = cprp.n;
+            cprp.sx += n;
+            cprp.sx2 += n * n;
+            const y = controller.progressTotal - controller.progress;
+            cprp.sy += y;
+            cprp.sxy += n * y;
+            const { sx, sy, sx2, sxy } = cprp;
+            const b = cprp.b = (n * sxy - sx * sy) / (n * sx2 - sx * sx);
+            const a = cprp.a = (sy - b * sx) / n;
+            controllerUpgradeState.upgradeEta = n >= 3 ? Math.round(-a / b) - n : undefined;
+        }
     } else {
-        delete roomState.controllerProgressRegressionParams;
-        delete roomState.controllerUpgradeEta;
+        roomState.controllerUpgradeState = "not-owned";
     }
 }
 
@@ -163,17 +180,31 @@ function renderRoomStatus(room: Room): void {
         expectedCollectors: expc,
         actualCollectors: actc,
         decayingCreeps,
-        controllerProgress: cpc,
-        controllerProgressTotal: cpt,
-        controllerUpgradeEta: cueta,
+        controllerUpgradeState,
     } = roomStateDict[room.name] || {};
     const decayingCreepsExpr = _(decayingCreeps)
         .map(dc => Game.getObjectById(dc)).filter()
         .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
+    const controllerUpgradeExpr = (() => {
+        if (controllerUpgradeState == null) return "N/A";
+        if (controllerUpgradeState == "no-upgrade") return "N/U";
+        if (controllerUpgradeState == "not-owned") return "(Not owned)";
+        const {
+            progress: progress,
+            progressTotal: total,
+            upgradeEta: eta,
+        } = controllerUpgradeState;
+        let expr = `${progress}/${total} (${Math.round(progress / total * 1000) / 10}%)`;
+        if (eta != null) {
+            const etaDuration = dayjs.duration(eta * TICK_DURATION_SECONDS, "seconds").format();
+            expr += ` ETA ${eta}tks (${etaDuration})`;
+        }
+        return expr;
+    })();
     visualTextMultiline(room, [
         `Defenders: ${dc}`,
         `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0} Tr:${ccc.trenta || 0}) (${actc && Math.round(actc * 10) / 10} / [${expc}])`,
-        cpc ? `Controller: ${cpc}/${cpt} (${cpc && cpt && Math.round(cpc! / cpt! * 1000) / 10}% ETA ${cueta}tks)` : "Controller: Not owned",
+        `Controller: ${controllerUpgradeExpr}`,
         "",
         "Decaying creeps",
         ...decayingCreepsExpr

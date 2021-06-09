@@ -73,6 +73,13 @@ export function removeTargetingCollector(id: CollectorTargetId, collector: Id<Cr
     if (!set.size) occupiedDests.delete(id);
 }
 
+export function isMoreCollectorNeeded(source: Resource | Tombstone | Ruin): boolean {
+    return isCollectableFrom(source)
+        && (_([...getTargetingCollectors(source.id)])
+            .map(id => Game.getObjectById(id))
+            .sumBy(c => c?.store.getFreeCapacity() || 0)) <= 0.7 * estimateCollectableAmount(source)
+}
+
 export function onNextFrame() {
     // Track untracked (or not sufficiently-tracked) sources.
     for (const room of _(Game.rooms).values()) {
@@ -81,11 +88,7 @@ export function onNextFrame() {
             ...room.find(FIND_DROPPED_RESOURCES),
             ...room.find(FIND_TOMBSTONES),
             ...room.find(FIND_RUINS),
-        ].filter(s => isCollectableFrom(s) && (
-            _([...getTargetingCollectors(s.id)])
-                .map(id => Game.getObjectById(id))
-                .sumBy(c => c?.store.getFreeCapacity() || 0)) <= 0.7 * estimateCollectableAmount(s))
-            .map(t => t.id);
+        ].filter(s => isMoreCollectorNeeded(s)).map(t => t.id);
         const memory = getRoomMemory(room);
         const prevUntargeted = memory.untargetedCollectables;
         const nextUntargeted = _(untargeted).keyBy(id => id).mapValues(id => prevUntargeted[id] ?? Game.time).value();

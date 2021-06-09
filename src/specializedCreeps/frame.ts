@@ -29,14 +29,14 @@ let nextHouseKeepingTime = 0;
 export function onNextFrame() {
     collectorOnNextFrame();
     // Drive the creeps
-    for (const creep of _(Game.creeps).values()) {
+    for (const creep of _(Game.creeps).values().shuffle()) {
         try {
             // skip spawning creeps.
             if (creep.spawning) continue;
             const sc = getSpecializedCreep(creep);
             if (!sc) continue;
             const { ticksToLive } = creep;
-            if (ticksToLive != null && ticksToLive <= 3) {
+            if (ticksToLive != null && ticksToLive <= 2) {
                 sc.dispose();
             } else {
                 sc.nextFrame();
@@ -47,7 +47,7 @@ export function onNextFrame() {
     }
     // Housekeeping
     if (Game.time >= nextHouseKeepingTime) {
-        nextHouseKeepingTime = Game.time + _.random(50, 150);
+        nextHouseKeepingTime = Game.time + _.random(10, 30);
         logger.info(`Housekeeping. Next housekeeping time: ${nextHouseKeepingTime}.`);
         // Order is important to ensure proper disposal.
         registryHouseKeeping(logger);

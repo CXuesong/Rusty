@@ -17,6 +17,11 @@
   resolved "https://registry.yarnpkg.com/@types/screeps/-/screeps-3.2.2.tgz#d7a4cccac98e063f37dd16c546be229bfc849536"
   integrity sha512-oI3zKXVL1HDkZ/x0xUhjD9CfAXmQPe/1kNkyKg5Wtd092/N5E5fYbNSH+Hgd5v6LEizYCLo+4drozp82j4Z9zw==
 
+dayjs@^1.10.5:
+  version "1.10.5"
+  resolved "https://registry.yarnpkg.com/dayjs/-/dayjs-1.10.5.tgz#5600df4548fc2453b3f163ebb2abbe965ccfb986"
+  integrity sha512-BUFis41ikLz+65iH6LHQCDm4YPMj5r1YFLdupPIyM4SGcXMmtiLQ7U37i+hGS8urIuqe7I/ou3IS1jVc4nbN4g==
+
 esbuild@^0.12.1:
   version "0.12.1"
   resolved "https://registry.yarnpkg.com/esbuild/-/esbuild-0.12.1.tgz#f652d5b3b9432dbb42fc2c034ddd62360296e03d"
