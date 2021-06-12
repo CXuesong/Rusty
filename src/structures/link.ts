@@ -1,8 +1,8 @@
 import _ from "lodash/index";
 import { Logger } from "src/utility/logger";
 
-export const LINK_RESOURCE_HIGH_LEVEL = 0.9;
-export const LINK_RESOURCE_HIGH_RESERVE_LEVEL = 0.85;
+export const LINK_RESOURCE_HIGH_LEVEL = 0.7;
+export const LINK_RESOURCE_HIGH_RESERVE_LEVEL = 0.6;
 export const LINK_RESOURCE_LOW_RESERVE_LEVEL = 0.15;
 export const LINK_RESOURCE_LOW_LEVEL = 0.1;
 
@@ -16,7 +16,7 @@ export function onNextFrame(room: Room) {
     let memory = room.memory.rustyLink as RustyLinkRoomMemory;
     if (!memory || typeof memory !== "object") room.memory.rustyLink = memory = {};
     if (memory.nextLinkCheckTime == null || Game.time >= memory.nextLinkCheckTime) {
-        memory.nextLinkCheckTime = Game.time + _.random(5, 10);
+        memory.nextLinkCheckTime = Game.time + _.random(2, 5);
         const links = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === "link" }) as StructureLink[];
         const hiLinks = _(links)
             .filter(l => l.cooldown === 0 && l.store.energy >= l.store.getCapacity(RESOURCE_ENERGY) * LINK_RESOURCE_HIGH_LEVEL)

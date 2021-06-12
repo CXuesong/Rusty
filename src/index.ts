@@ -18,6 +18,7 @@ loggerLevels.push(
     ["Rusty.Utility.Console", LogLevel.trace],
     ["Rusty.Utility.Combat", LogLevel.info],
     ["Rusty.SpecializedCreeps.Frame", LogLevel.info],
+    ["Rusty.Structures.Link", LogLevel.info],
     // ["Rusty.SpecializedCreeps.CollectorCreep.#Plumthistle", LogLevel.trace],
 );
 
