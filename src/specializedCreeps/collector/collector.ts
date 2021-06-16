@@ -195,7 +195,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 ...room.find(FIND_SOURCES),
             ].filter(t => isCollectableFrom(t, creep.pos));
         // Prefer collect from direct source.
-        let nearest = findNearestPath(creep.pos, targets, { maxRooms: 1 });
+        let nearest = findNearestPath(creep.pos, targets, { maxRooms: 5 });
         this.logger.info(`transitCollect: Nearest target: ${nearest?.goal}, cost ${nearest?.cost}.`);
         if (!nearest || !untargeted.length && nearest.cost > 20) {
             // If every direct source is too far away...
@@ -229,7 +229,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                 ...collectingCreeps
             ].filter(t => !this.recentlyDistributedTo(t.id));
             const secondary = targets.length
-                ? findNearestPath(creep.pos, targets, { maxRooms: 1 })
+                ? findNearestPath(creep.pos, targets, { maxRooms: 5 })
                 : undefined;
             this.logger.info(`transitCollect: Secondary target: ${secondary?.goal}, cost ${secondary?.cost}.`);
             if (!nearest || secondary && nearest.cost - secondary.cost > 10)
@@ -281,7 +281,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private assignPath(target: RoomObject & { id: string }, path?: RoomPosition[]): boolean {
         if (!path) {
             const { creep } = this;
-            const result = findPathTo(creep, target.pos, { maxRooms: 1 });
+            const result = findPathTo(creep, target.pos, { maxRooms: 5 });
             if (!result) return false;
             path = result.path;
         }
@@ -401,7 +401,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     ...constructionSites,
                 ];
             }
-            let nearest = findNearestPath<CollectorCreepDistributeTargetType>(creep.pos, goals, { maxRooms: 1 });
+            let nearest = findNearestPath<CollectorCreepDistributeTargetType>(creep.pos, goals, { maxRooms: 5 });
             if (!nearest) {
                 // No goal.
                 this.logger.info(`transitDistribute: No primary goal.`);
@@ -427,7 +427,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
                     const group = targetGroups[groupIndex ?? 0];
                     const [name, , sts] = group;
                     // this.logger.warning(`${pos}/${_(possibilityCumSum).last()!} --> ${targetGroups.map(g => `${g[0]}: ${g[1]}`)} --> ${group[0]}`);
-                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), { maxRooms: 1 });
+                    nearest = findNearestPath(creep.pos, sts.map(s => s.structure), { maxRooms: 5 });
                     if (nearest) {
                         this.logger.info(`transitDistribute: Found secondary goal (${name}).`);
                         break;
