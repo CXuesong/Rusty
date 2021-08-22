@@ -281,7 +281,7 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
     private assignPath(target: RoomObject & { id: string }, path?: RoomPosition[]): boolean {
         if (!path) {
             const { creep } = this;
-            const result = findPathTo(creep, target.pos, { maxRooms: 5 });
+            const result = findPathTo(creep, target, { maxRooms: 5 });
             if (!result) return false;
             path = result.path;
         }
@@ -371,13 +371,27 @@ export class CollectorCreep extends SpecializedCreepBase<CollectorCreepState> {
             const targetingWorkParts = _([...getTargetingCollectors(controller.id)])
                 .map(id => Game.getObjectById(id)?.getActiveBodyparts(WORK) || 0)
                 .sum();
-            if (targetingWorkParts < 2 || controller.ticksToDowngrade <= 7200 && targetingWorkParts < 8) {
-                // Resetting downgrade timer is priority.
-                controllerPriority = 1;
-            } else if (targetingWorkParts < 16) {
-                controllerPriority = 0.5;
-            } else if (targetingWorkParts < 24) {
-                controllerPriority = 0.1;
+            if (controller.upgradeBlocked || controller.progressTotal == null) {
+                // Upgrade is not possible
+                if (controller.ticksToDowngrade < Math.max(7200, CONTROLLER_DOWNGRADE[controller.level] * 0.8)) {
+                    // But we need timer reset
+                    if (targetingWorkParts < 2) {
+                        controllerPriority = 1;
+                    } else if (targetingWorkParts < 4) {
+                        controllerPriority = 0.5;
+                    } else if (targetingWorkParts < 8) {
+                        controllerPriority = 0.1;
+                    }
+                }
+            } else {
+                if (targetingWorkParts < 2 || controller.ticksToDowngrade <= 7200 && targetingWorkParts < 8) {
+                    // Resetting downgrade timer is priority.
+                    controllerPriority = 1;
+                } else if (targetingWorkParts < 16) {
+                    controllerPriority = 0.5;
+                } else if (targetingWorkParts < 24) {
+                    controllerPriority = 0.1;
+                }
             }
         }
         if (controllerPriority === 0 || controllerPriority < 1 && _.random(true) > controllerPriority) {

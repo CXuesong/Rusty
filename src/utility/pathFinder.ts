@@ -80,7 +80,7 @@ export function buildRoomCostMatrix(room: Room, options?: RoomCostMatrixOptions)
 export function buildPathFinderGoals<T extends HasRoomPosition = never>(goals: _.List<RoomPosition | T>): Array<{ pos: RoomPosition; range: number, goal: RoomPosition | T }> {
     return _(goals).map(g => {
         const pos = g instanceof RoomPosition ? g : g.pos;
-        return { pos: pos, range: 1, goal: g };
+        return { pos: pos, range: g instanceof StructureController ? 2 : 1, goal: g };
     }).value();
 }
 
