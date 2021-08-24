@@ -7,22 +7,25 @@
   "license": "Apache-2.0",
   "private": true,
   "scripts": {
-    "build": "esbuild ./src/index.ts --bundle --outfile=./dist/rusty.js --minify-whitespace --minify-syntax --platform=node --target=es2016 --tsconfig=./src/tsconfig.esbuild.json",
+    "build": "esbuild ./src/index.ts --bundle --outfile=./dist/rusty.js --platform=node --target=es2017 --tsconfig=./src/tsconfig.esbuild.json",
+    "build:prod": "esbuild ./src/index.ts --bundle --outfile=./dist/rusty.js --minify --platform=node --target=es2017 --tsconfig=./src/tsconfig.esbuild.json",
     "typecheck": "tsc -p ./src/ --noEmit",
     "push": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-1",
     "push:2": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-2",
+    "push:3": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-test-3",
     "push:prod": "pwsh ./scripts/Publish-Screeps.ps1 ./dist/rusty.js rusty-prod"
   },
   "devDependencies": {
-    "@types/lodash": "^4.14.170",
-    "@types/node": "^15.6.1",
-    "@types/screeps": "^3.2.2",
-    "esbuild": "^0.12.1",
-    "typescript": "^4.3.2"
+    "@types/lodash": "^4.14.171",
+    "@types/node": "^16.3.1",
+    "@types/screeps": "^3.2.3",
+    "esbuild": "^0.12.15",
+    "typescript": "^4.4.0-beta"
   },
   "dependencies": {
-    "dayjs": "^1.10.5",
+    "dayjs": "^1.10.6",
     "lodash": "^4.17.21",
-    "tslib": "^2.2.0"
+    "tasklike-promise-library": "^0.0.13",
+    "tslib": "^2.3.0"
   }
 }

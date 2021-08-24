@@ -8,6 +8,7 @@ declare global {
     interface CreepMemory {
         rusty: unknown;
         rustyType: string;
+        rustySku?: string;
     }
 
     interface RoomMemory {

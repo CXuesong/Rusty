@@ -1,21 +1,28 @@
 import _ from "lodash/index";
-import { BodyPartProfile, bodyPartProfileToArray } from "src/utility/creep";
-import { Logger } from "src/utility/logger";
-import { buildCreepMemory, SpecializedSpawnCreepErrorCode } from "./base";
-import { randomApprenticeName, randomLeaderName, randomWarriorName } from "./nameGenerator";
+import { randomApprenticeName, randomLeaderName, randomWarriorName } from "src/creeps/nameGenerator";
+import { BodyPartProfile, bodyPartProfileToArray } from "src/creeps/utility";
+import { Logger } from "../utility/logger";
 
-const logger = new Logger("Rusty.SpecializedCreeps.Spawn");
+export type SpecializedSpawnCreepErrorCode = Exclude<ScreepsReturnCode, OK | ERR_NAME_EXISTS>;
 
-export function initializeCreepMemory<TState extends Record<string, any> = {}>(creepName: string, rustyType: string, state: TState): void {
-    // Note that the creep just started spawning is not visible at current frame.
-    // const { spawning } = spawn;
-    // if (!spawning) throw new Error("No spawnning object.");
-    if (Memory.creeps[creepName]) {
-        // Dead creep did not clean up.
-        logger.info(`initializeCreepMemory: Overwriting creep memory: ${creepName}`);
+const logger = new Logger("Rusty.Spawn");
+
+export function trySpawn(spawns: Iterable<StructureSpawn>, spawnFunc: (spawn: StructureSpawn) => string | ScreepsReturnCode): StructureSpawn | undefined {
+    let count = 0;
+    let lastResult: [StructureSpawn, ScreepsReturnCode] | undefined;
+    for (const spawn of spawns) {
+        const result = spawnFunc(spawn);
+        if (result === OK || typeof result === "string") return spawn;
+        count++;
+        lastResult = [spawn, result];
     }
-    Memory.creeps[creepName] = buildCreepMemory(rustyType, state);
+    if (lastResult)
+        logger.warning(`trySpawn: All attempts exhausted in ${count} spawns. Last result: ${lastResult[1]} on ${lastResult[0]}.`);
+    else
+        logger.warning("trySpawn: spawns list is empty.");
+    return undefined;
 }
+
 
 export interface SpawnOptionsEx extends SpawnOptions {
     namePrefix?: string;

@@ -1,16 +1,10 @@
 import _ from "lodash";
-
-const walkableStructureTypes = new Set<StructureConstant>([
-    STRUCTURE_ROAD,
-    STRUCTURE_CONTAINER,
-])
+import { isStructureWalkable } from "./terrain";
 
 function evadeBlockers(room: Room, cost: CostMatrix): void {
     const blockers = _([
         room.find(FIND_CREEPS),
-        room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_RAMPART ? !s.my && !s.isPublic : !walkableStructureTypes.has(s.structureType)
-        })]).flatten();
+        room.find(FIND_STRUCTURES, { filter: s => !isStructureWalkable(s) })]).flatten();
     for (const b of blockers)
         cost.set(b.pos.x, b.pos.y, 255);
 }
@@ -93,10 +87,10 @@ export interface FindPathResult {
     cost: number;
 }
 
-export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<T>, opts?: PathFinderOpts): FindPathResult & { goal: T; } | undefined;
-export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<RoomPosition>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition; } | undefined;
-export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<RoomPosition | T>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition | T; } | undefined;
-export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | T, goals: _.List<RoomPosition | T>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition | T; } | undefined {
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | HasRoomPosition, goals: _.List<T>, opts?: PathFinderOpts): FindPathResult & { goal: T; } | undefined;
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | HasRoomPosition, goals: _.List<RoomPosition>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition; } | undefined;
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | HasRoomPosition, goals: _.List<RoomPosition | T>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition | T; } | undefined;
+export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition | HasRoomPosition, goals: _.List<RoomPosition | T>, opts?: PathFinderOpts): FindPathResult & { goal: RoomPosition | T; } | undefined {
     const originPos = "pos" in origin ? origin.pos : origin;
     const localOptions: PathFinderOpts = {
         plainCost: 2,
@@ -127,7 +121,6 @@ export function findNearestPath<T extends HasRoomPosition>(origin: RoomPosition 
         cost: result.cost
     };
 }
-
 
 export function findPathTo(origin: RoomPosition | HasRoomPosition, goal: RoomPosition | HasRoomPosition, opts?: PathFinderOpts): FindPathResult | undefined {
     const result = findNearestPath(origin, [goal], opts);

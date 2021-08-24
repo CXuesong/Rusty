@@ -6,7 +6,7 @@
         "strict": true,
         "noUnusedLocals": true,
         "sourceMap": true,
-        "target": "ES2016",
+        "target": "ES2017",
         "jsx": "react",
         "lib": [
             "DOM",
@@ -18,5 +18,8 @@
         "importHelpers": true,
         "removeComments": false,
         "baseUrl": "..",
-    }
+    },
+    "exclude": [
+        "**/_private/**/*"
+    ]
 }

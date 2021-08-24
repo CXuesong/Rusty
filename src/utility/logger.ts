@@ -38,6 +38,8 @@ export class Logger {
     private _minLevelCacheToken = loggerLevelCacheToken;
     public constructor(public readonly name: string) {
     }
+    public log(level: LogLevel, message: () => unknown): void;
+    public log(level: LogLevel, ...message: unknown[]): void;
     public log(level: LogLevel, ...message: unknown[]) {
         if (this._minLevelCacheToken !== loggerLevelCacheToken || this.minLevel === "init") {
             // Lazy evaluation log level.
@@ -51,18 +53,27 @@ export class Logger {
             this._minLevelCacheToken = loggerLevelCacheToken;
         }
         if (this.minLevel == null || level >= this.minLevel) {
-            console.log(`[${this.name}][${getLevelExpr(level)}] ${message.map(m => formatMessageArg(m)).join(" ")}`);
+            const formatted = message.length === 1 && typeof message[0] === "function" ? message[0]() : message.map(m => formatMessageArg(m)).join(" ");
+            console.log(`[${this.name}][${getLevelExpr(level)}] ${formatted}`);
         }
     }
+    public trace(message: () => unknown): void;
+    public trace(...message: unknown[]): void;
     public trace(...message: unknown[]) {
         this.log(LogLevel.trace, ...message);
     }
+    public info(message: () => unknown): void;
+    public info(...message: unknown[]): void;
     public info(...message: unknown[]) {
         this.log(LogLevel.info, ...message);
     }
+    public warning(message: () => unknown): void;
+    public warning(...message: unknown[]): void;
     public warning(...message: unknown[]) {
         this.log(LogLevel.warning, ...message);
     }
+    public error(message: () => unknown): void;
+    public error(...message: unknown[]): void;
     public error(...message: unknown[]) {
         this.log(LogLevel.error, ...message);
     }
