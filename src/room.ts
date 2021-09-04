@@ -9,6 +9,7 @@ import { onNextFrame as onNukeNextFrame } from "./nuke";
 import { Logger } from "./utility/logger";
 import { visualTextMultiline } from "./utility/visual";
 import dayjs from "dayjs";
+import { getRoomConstructionMode, RoomConstructionMode } from "./specializedCreeps/collector/predicates";
 
 interface RustyRoomMemory {
     nextSpawnTime?: number;
@@ -27,7 +28,8 @@ interface RoomTransientState {
         progress: number;
         progressTotal: number;
         upgradeEta?: number;
-    }
+    },
+    constructionMode?: RoomConstructionMode;
 }
 
 const logger = new Logger("Rusty.Room");
@@ -171,6 +173,7 @@ export function onRoomNextFrame(room: Room): void {
     } else {
         roomState.controllerUpgradeState = "not-owned";
     }
+    roomState.constructionMode = getRoomConstructionMode(room);
 }
 
 function renderRoomStatus(room: Room): void {
@@ -181,13 +184,14 @@ function renderRoomStatus(room: Room): void {
         actualCollectors: actc,
         decayingCreeps,
         controllerUpgradeState,
+        constructionMode,
     } = roomStateDict[room.name] || {};
     const decayingCreepsExpr = _(decayingCreeps)
         .map(dc => Game.getObjectById(dc)).filter()
         .map(c => `  ${c!.name}\t${c!.ticksToLive}tks`);
     const controllerUpgradeExpr = (() => {
         if (controllerUpgradeState == null) return "N/A";
-        if (controllerUpgradeState == "no-upgrade") return "N/U";
+        if (controllerUpgradeState == "no-upgrade") return "(Not upgradable)";
         if (controllerUpgradeState == "not-owned") return "(Not owned)";
         const {
             progress: progress,
@@ -205,6 +209,7 @@ function renderRoomStatus(room: Room): void {
         `Defenders: ${dc}`,
         `Collectors: ${_(ccc).values().sum()}(N:${ccc.normal || 0} T:${ccc.tall || 0} G:${ccc.grande || 0} V:${ccc.venti || 0} Tr:${ccc.trenta || 0}) (${actc && Math.round(actc * 10) / 10} / [${expc}])`,
         `Controller: ${controllerUpgradeExpr}`,
+        `Construction mode: ${constructionMode}`,
         "",
         "Decaying creeps",
         ...decayingCreepsExpr

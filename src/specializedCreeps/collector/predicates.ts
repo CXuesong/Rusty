@@ -2,37 +2,64 @@ import _ from "lodash/index";
 import { CollectorCreepCollectTargetType } from "./state";
 import { getTargetingCollectors } from "./targetTracking";
 
+export type RoomConstructionMode = 'minimal' | 'balanced' | 'fort';
+
 const MIN_COLLECTABLE_ENERGY_NEAR = 5;
-const AGGRESSIVE_UPGRADE_MODE = false;
 const RANGE_DISTANCE_RATIO = 2;
+
+export function getRoomConstructionMode(room: Room): RoomConstructionMode {
+    if (!room.controller || room.controller.level <= 3) return 'minimal';
+    if (room.controller.progressTotal == null) return 'fort';
+    return 'balanced';
+}
 
 export function structureNeedsRepair(structure: Structure): "now" | "yes" | "later" | false {
     // some WALL does not have hitsMax
     if (!structure.hitsMax || structure.hits >= structure.hitsMax) return false;
+    const constructionMode = getRoomConstructionMode(structure.room);
     if (structure instanceof StructureRampart) {
-        if (AGGRESSIVE_UPGRADE_MODE) {
-            if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "now";
-            if (structure.hits < 5000 + 3600 * 2 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "yes";
-            if (structure.hits < 5000 + 3600 * 12 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "later";
-            return false;
+        let params: [placementRatio: number, spawnPlacementRatio: number, base: number, h1: number, h2: number, h3: number];
+        switch (constructionMode) {
+            case 'minimal':
+                params = [2, 2, 5000, 1, 2, 6];
+                break;
+            case 'fort':
+                params = [8, 16, 5000, 1, 6, 12];
+                break;
+            default:
+                params = [2, 3, 5000, 1, 6, 12];
+                break;
         }
+        const [pr, spr, b, h1, h2, h3] = params;
+        // hits per hour
         // 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME = 15,800
-        if (structure.hits < 5000 + 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "now";
-        if (structure.hits < 10000 + 3600 * 24 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "yes";
-        // Rampart has relatively high hitsMax
-        if (structure.hits < 50000 + 3600 * 24 * 2 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) return "later";
+        const hph = 3600 * RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME
+        if (structure.hits < b + h1 * hph) return "now";
+        const structures = structure.pos.lookFor(LOOK_STRUCTURES);
+        const anySpawn = structures.find(s => s.structureType === STRUCTURE_SPAWN);
+        const anyStructure = anySpawn || structures.find(s =>
+            s.structureType !== STRUCTURE_RAMPART && s.structureType !== STRUCTURE_ROAD)
+        const placementRatio = anySpawn ? spr : anyStructure ? pr : 1;
+        if (structure.hits < b + placementRatio * h2 * hph) return "yes";
+        if (structure.hits < b + placementRatio * h3 * hph) return "later";
         return false;
     }
     if (structure instanceof StructureWall) {
-        if (AGGRESSIVE_UPGRADE_MODE) {
-            if (structure.hits < 30000) return "now";
-            if (structure.hits < 50000) return "yes";
-            if (structure.hits < 100000) return "later";
-            return false;
+        let params: [h1k: number, h2k: number, h3k: number];
+        switch (constructionMode) {
+            case 'minimal':
+                params = [30, 50, 100];
+                break;
+            case 'fort':
+                params = [500, 1000, 50000];
+                break;
+            default:
+                params = [50, 500, 1000];
+                break;
         }
-        if (structure.hits < 50000) return "now";
-        if (structure.hits < 500000) return "yes";
-        if (structure.hits < 1000000) return "later";
+        if (structure.hits < params[0] * 1000) return "now";
+        if (structure.hits < params[1] * 1000) return "yes";
+        if (structure.hits < params[2] * 1000) return "later";
         return false;
     }
     if (structure instanceof StructureRoad) {
