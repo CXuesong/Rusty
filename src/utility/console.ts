@@ -7,6 +7,7 @@ import { DefenderCreep, DefenderCreepState } from "src/specializedCreeps/defende
 import { __internal__getSpecializedCreepsCache } from "src/specializedCreeps/registry";
 import { initializeCreepMemory } from "src/specializedCreeps/spawn";
 import { Logger, loggerLevels, LogLevel, purgeLoggerLevelCache } from "./logger";
+import { pushNotification } from "./notifications";
 
 const logger = new Logger("Rusty.Utility.Console");
 
@@ -117,5 +118,9 @@ export class ConsoleUtils {
         (entry as any)[ConsoleUtils.trackCreepLogLevelSymbol] = true;
         loggerLevels.push(entry);
         purgeLoggerLevelCache();
+    }
+
+    public static pushNotification(message: string, isCritical: boolean): void {
+        pushNotification(message, { isCritical });
     }
 }

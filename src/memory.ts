@@ -1,4 +1,5 @@
 export interface RustyMemoryPart {
+    notifications: unknown
 }
 
 export function getRustyMemory(): RustyMemoryPart {

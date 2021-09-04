@@ -8,8 +8,11 @@ import { ConsoleUtils } from "./utility/console";
 import { Logger, loggerLevels, LogLevel } from "./utility/logger";
 import dayjs from "dayjs";
 import dayjsDuration from "dayjs/plugin/duration";
+import utc from "dayjs/plugin/utc";
+import { flushNotifications } from "./utility/notifications";
 
 dayjs.extend(dayjsDuration);
+dayjs.extend(utc);
 
 loggerLevels.push(
     ["Rusty", LogLevel.warning],
@@ -17,6 +20,7 @@ loggerLevels.push(
     ["Rusty.Loop", LogLevel.info],
     ["Rusty.Utility.Console", LogLevel.trace],
     ["Rusty.Utility.Combat", LogLevel.info],
+    ["Rusty.Utility.Notifications", LogLevel.info],
     ["Rusty.SpecializedCreeps.Frame", LogLevel.info],
     ["Rusty.Structures.Link", LogLevel.info],
     // ["Rusty.SpecializedCreeps.CollectorCreep.#Plumthistle", LogLevel.trace],
@@ -37,6 +41,7 @@ export function loop() {
         RustyRoom.onNextFrame();
         SpecializedCreeps.onNextFrame();
         RustyLoop.onNextFrame();
+        flushNotifications();
     } catch (err) {
         logger.error(err);
     } finally {

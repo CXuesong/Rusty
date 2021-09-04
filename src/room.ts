@@ -10,6 +10,7 @@ import { Logger } from "./utility/logger";
 import { visualTextMultiline } from "./utility/visual";
 import dayjs from "dayjs";
 import { getRoomConstructionMode, RoomConstructionMode } from "./specializedCreeps/collector/predicates";
+import { pushNotification } from "./utility/notifications";
 
 interface RustyRoomMemory {
     nextSpawnTime?: number;
@@ -42,7 +43,9 @@ export function onTowersNextFrame(room: Room, towers: StructureTower[]): void {
     var healable = room.find(FIND_MY_CREEPS, { filter: c => c.ticksToLive != null && c.ticksToLive > 50 && c.hitsMax - c.hits >= 20 });
     if (hostiles.length) {
         const message = `Hostile (${hostiles.length}) ${_(hostiles).take(5).map(h => `[${h.name}|${h.owner.username}]`).join()} spotted in room ${room.name}.`;
-        Game.notify(message, 1);
+        pushNotification(message, {
+            isCritical: !!hostiles.find(h => h.owner.username !== "Invader")
+        });
         logger.warning(message);
     }
     for (const tower of towers) {
